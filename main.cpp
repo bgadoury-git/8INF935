@@ -1,4 +1,11 @@
 #include "Processing.h"
+#include "PhysicsEngine.h"
+
+#ifdef _DEBUG
+    #include "Test.h"
+#endif
+    
+#include <iostream>
 
 struct Sketch : public Processing::PApplet {
     void settings() override { size(640, 360); }
@@ -11,7 +18,13 @@ struct Sketch : public Processing::PApplet {
 };
 
 int main() {
+
+#ifdef _DEBUG
+    Test::run();
+#endif // _DEBUG
+
 	Sketch sketch;
 	sketch.run();
+
 	return 0;
 }
