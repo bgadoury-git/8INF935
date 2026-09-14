@@ -1,0 +1,36 @@
+{
+    // Lets you build-and-run with Ctrl+Shift+B (Cmd+Shift+B on macOS)
+    // instead of typing ./processing-cpp/run.sh in a terminal.
+    //
+    // This file belongs in YOUR project's .vscode/ folder, not inside
+    // processing-cpp/ -- VS Code only reads .vscode/tasks.json at the
+    // workspace root. Copy this file there:
+    //
+    //   mkdir -p .vscode
+    //   cp processing-cpp/vscode-task/tasks.json .vscode/tasks.json
+    //
+    // It just calls run.sh / run.bat, the same script the README's
+    // command-line instructions use -- there's no separate build logic
+    // here to keep in sync with anything.
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Run processing-cpp sketch",
+            "type": "shell",
+            "command": "${workspaceFolder}/processing-cpp/run.sh",
+            "windows": {
+                "command": "${workspaceFolder}\\processing-cpp\\run.bat"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "clear": true
+            },
+            "problemMatcher": ["$gcc"]
+        }
+    ]
+}
