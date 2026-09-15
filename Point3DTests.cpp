@@ -80,7 +80,7 @@ namespace Point3DTests {
 	}
 
 	static bool testDistanceSquaredTo() {
-		if (Point3D<int>(1, 2, 3).distanceSquaredTo(Point3D<int>(4, 6, 3)) != 25) {
+		if (Point3D<float>(1.0f, 2.0f, 3.0f).distanceSquaredTo(Point3D<float>(4.0f, 6.0f, 3.0f)) != 25.0f) {
 			std::cerr << "Distance squared test failed!" << std::endl;
 			return false;
 		}

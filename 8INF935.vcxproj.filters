@@ -13,10 +13,28 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
-    <Filter Include="Header Files\Tests">
+    <Filter Include="Header Files\Game">
+      <UniqueIdentifier>{6fcc5e6c-b1b8-4c26-9832-a53de2589a24}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Game">
+      <UniqueIdentifier>{0ce4599a-5c18-453a-bc4f-dda9ae20f9ad}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Graphics">
+      <UniqueIdentifier>{6bb154c2-c860-46e9-a8ef-4c079a7cf712}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Graphics">
+      <UniqueIdentifier>{e2d49b5d-56c4-49ad-968d-dec30c67e784}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Physics">
+      <UniqueIdentifier>{015dc793-fe55-4556-8465-a754aa0e9192}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Physics\Tests">
       <UniqueIdentifier>{2a5ef20d-a4b6-4a22-8526-4fb581f0b7b5}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\Tests">
+    <Filter Include="Source Files\Physics">
+      <UniqueIdentifier>{2d5f0739-0145-4324-98e9-25e5085ae043}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Physics\Tests">
       <UniqueIdentifier>{27734537-c4b6-485e-ba86-724ab11cfbf8}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
@@ -24,43 +42,64 @@
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="processing-cpp\src\Processing.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="Point3DTests.cpp">
-      <Filter>Source Files\Tests</Filter>
+      <Filter>Source Files\Physics\Tests</Filter>
     </ClCompile>
     <ClCompile Include="Vector3DTests.cpp">
-      <Filter>Source Files\Tests</Filter>
+      <Filter>Source Files\Physics\Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="Bullet.cpp">
+      <Filter>Source Files\Game</Filter>
+    </ClCompile>
+    <ClCompile Include="Ball.cpp">
+      <Filter>Source Files\Game</Filter>
+    </ClCompile>
+    <ClCompile Include="processing-cpp\src\Processing.cpp">
+      <Filter>Source Files\Graphics</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Vector3D.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Point3D.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="MathHelpers.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="Point3DTests.h">
-      <Filter>Header Files\Tests</Filter>
+      <Filter>Header Files\Physics\Tests</Filter>
     </ClInclude>
     <ClInclude Include="Test.h">
-      <Filter>Header Files\Tests</Filter>
+      <Filter>Header Files\Physics\Tests</Filter>
     </ClInclude>
     <ClInclude Include="TestHelpers.h">
-      <Filter>Header Files\Tests</Filter>
+      <Filter>Header Files\Physics\Tests</Filter>
     </ClInclude>
     <ClInclude Include="Vector3DTests.h">
-      <Filter>Header Files\Tests</Filter>
+      <Filter>Header Files\Physics\Tests</Filter>
+    </ClInclude>
+    <ClInclude Include="PhysicsConstants.h">
+      <Filter>Header Files\Physics</Filter>
+    </ClInclude>
+    <ClInclude Include="MathHelpers.h">
+      <Filter>Header Files\Physics</Filter>
+    </ClInclude>
+    <ClInclude Include="Particle.h">
+      <Filter>Header Files\Physics</Filter>
     </ClInclude>
     <ClInclude Include="PhysicsEngine.h">
-      <Filter>Header Files</Filter>
+      <Filter>Header Files\Physics</Filter>
+    </ClInclude>
+    <ClInclude Include="Point3D.h">
+      <Filter>Header Files\Physics</Filter>
+    </ClInclude>
+    <ClInclude Include="Vector3D.h">
+      <Filter>Header Files\Physics</Filter>
+    </ClInclude>
+    <ClInclude Include="Bullet.h">
+      <Filter>Header Files\Game</Filter>
+    </ClInclude>
+    <ClInclude Include="Ball.h">
+      <Filter>Header Files\Game</Filter>
+    </ClInclude>
+    <ClInclude Include="GraphicsConstants.h">
+      <Filter>Header Files\Graphics</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

@@ -151,6 +151,8 @@
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Ball.cpp" />
+    <ClCompile Include="Bullet.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Point3DTests.cpp" />
     <ClCompile Include="processing-cpp\src\Processing.cpp" />
@@ -160,7 +162,12 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Ball.h" />
+    <ClInclude Include="Bullet.h" />
+    <ClInclude Include="PhysicsConstants.h" />
+    <ClInclude Include="GraphicsConstants.h" />
     <ClInclude Include="MathHelpers.h" />
+    <ClInclude Include="Particle.h" />
     <ClInclude Include="PhysicsEngine.h" />
     <ClInclude Include="Point3D.h" />
     <ClInclude Include="Point3DTests.h" />

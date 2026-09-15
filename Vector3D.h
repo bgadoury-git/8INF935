@@ -4,7 +4,7 @@
 #include <iostream>
 #include <limits>
 
-template <typename T>
+template <std::floating_point T = double>
 class Vector3D
 {
 private:
@@ -15,7 +15,7 @@ private:
 	static bool equalComponents(T left, T right) {
 		if constexpr (std::is_floating_point_v<T>) {
 			const T difference = std::abs(left - right);
-			const T scale = std::max({ T(1), std::abs(left), std::abs(right) });
+			const T scale = std::max({ static_cast<T>(1), std::abs(left), std::abs(right) });
 			return difference <= std::numeric_limits<T>::epsilon() * scale;
 		}
 		else {
@@ -48,11 +48,9 @@ public:
 		return m_x * m_x + m_y * m_y + m_z * m_z;
 	}
 
-	double normalize() {
-		static_assert(std::is_floating_point_v<T>,
-			"Vector3D::normalize requires floating-point coordinates");
-		const double len = length();
-		if (len > 0.0) {
+	T normalize() {
+		const T len = length();
+		if (len > static_cast<T>(0)) {
 			m_x /= len;
 			m_y /= len;
 			m_z /= len;
@@ -60,15 +58,15 @@ public:
 		return len;
 	}
 
-	Vector3D<double> normalized() const {
-		const double len = length();
-		if (len > 0.0) {
-			return Vector3D<double>(
-				static_cast<double>(m_x) / len,
-				static_cast<double>(m_y) / len,
-				static_cast<double>(m_z) / len);
+	Vector3D<T> normalized() const {
+		const T len = length();
+		if (len > static_cast<T>(0)) {
+			return Vector3D<T>(
+				m_x / len,
+				m_y / len,
+				m_z / len);
 		}
-		return Vector3D<double>(0.0, 0.0, 0.0);
+		return Vector3D<T>{};
 	}
 
 	T dot(const Vector3D& other) const {

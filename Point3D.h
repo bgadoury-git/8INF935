@@ -6,7 +6,7 @@
 #include <iostream>
 #include <type_traits>
 
-template <typename T>
+template <std::floating_point T = double>
 class Point3D
 {
 private:
@@ -17,7 +17,7 @@ private:
 	static bool equalComponents(T left, T right) {
 		if constexpr (std::is_floating_point_v<T>) {
 			const T difference = std::abs(left - right);
-			const T scale = std::max({ T(1), std::abs(left), std::abs(right) });
+			const T scale = std::max({ static_cast<T>(1), std::abs(left), std::abs(right) });
 			return difference <= std::numeric_limits<T>::epsilon() * scale;
 		}
 		else {
@@ -38,10 +38,10 @@ public:
 	T getY() const { return m_y; }
 	T getZ() const { return m_z; }
 
-	double distanceTo(const Point3D& other) const {
-		const double dx = static_cast<double>(m_x) - other.m_x;
-		const double dy = static_cast<double>(m_y) - other.m_y;
-		const double dz = static_cast<double>(m_z) - other.m_z;
+	T distanceTo(const Point3D& other) const {
+		const T dx = static_cast<T>(m_x) - other.m_x;
+		const T dy = static_cast<T>(m_y) - other.m_y;
+		const T dz = static_cast<T>(m_z) - other.m_z;
 		return std::sqrt(dx * dx + dy * dy + dz * dz);
 	}
 
