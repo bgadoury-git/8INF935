@@ -23,9 +23,7 @@ private:
 
         Vector3D<T> totalAccel = m_acceleration;
 
-        if (m_affectedByGravity) {
-            totalAccel += Vector3D<T>{static_cast<T>(0), -static_cast<T>(GRAVITY), static_cast<T>(0)};
-        }
+		//Acculator will be implemented later, for now we just return the current acceleration
 
         return totalAccel;
     }
@@ -43,6 +41,7 @@ public:
         m_inverseMass(mass > static_cast<T>(0) ? static_cast<T>(1) / mass : static_cast<T>(0)),
         m_linearDamping(damping),
         m_affectedByGravity(affectedByGravity) {
+		affectedByGravity ? m_acceleration.setY(-static_cast<T>(GRAVITY)) : m_acceleration.setY(static_cast<T>(0));
 		++particleCount;
     }
 
@@ -56,10 +55,10 @@ public:
         ++particleCount;
     }
 
-	Particle(const Particle&& other) noexcept
-		: m_position(other.m_position),
-		m_velocity(other.m_velocity),
-		m_acceleration(other.m_acceleration),
+    Particle(Particle&& other) noexcept
+		: m_position(std::move(other.m_position)),
+		m_velocity(std::move(other.m_velocity)),
+		m_acceleration(std::move(other.m_acceleration)),
 		m_inverseMass(other.m_inverseMass),
 		m_linearDamping(other.m_linearDamping),
 		m_affectedByGravity(other.m_affectedByGravity) {
@@ -83,9 +82,6 @@ public:
 	T getLinearDamping() const { return m_linearDamping; }
 	bool getAffectedByGravity() const { return m_affectedByGravity; }
     
-
-
-
     void applyVerletIntegration(T deltaTime) {
         if (m_inverseMass <= static_cast<T>(0)) return;
 
