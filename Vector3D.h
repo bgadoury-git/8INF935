@@ -36,12 +36,11 @@ public:
 	T getY() const { return m_y; }
 	T getZ() const { return m_z; }
 
-	// Vector operations
-	double length() const {
+	T length() const {
 		return std::sqrt(
-			static_cast<double>(m_x) * m_x +
-			static_cast<double>(m_y) * m_y +
-			static_cast<double>(m_z) * m_z);
+			m_x * m_x +
+			m_y * m_y +
+			m_z * m_z);
 	}
 
 	T lengthSquared() const {

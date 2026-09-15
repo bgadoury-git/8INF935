@@ -1,4 +1,5 @@
 #pragma once
 
-inline constexpr float ScreenWidth = 640.0f;
-inline constexpr float ScreenHeight = 360.0f;
+inline constexpr int ScreenWidth = 1920;
+inline constexpr int ScreenHeight = 1080;
+inline constexpr float floorY = 300.0f;
