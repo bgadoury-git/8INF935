@@ -51,6 +51,9 @@
     <ClCompile Include="processing-cpp\src\Processing.cpp">
       <Filter>Source Files\Graphics</Filter>
     </ClCompile>
+    <ClCompile Include="ParticleTests.cpp">
+      <Filter>Source Files\Physics\Tests</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
@@ -115,6 +118,9 @@
     </ClInclude>
     <ClInclude Include="Sketch.h">
       <Filter>Header Files\Game</Filter>
+    </ClInclude>
+    <ClInclude Include="ParticleTests.h">
+      <Filter>Header Files\Physics\Tests</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

@@ -9,6 +9,7 @@
 #include <vector>
 #include <memory>
 #include <string>
+#include <cmath>
 
 struct Sketch : public Processing::PApplet {
     std::vector<std::unique_ptr<Particle<float>>> particles;
@@ -154,7 +155,8 @@ private:
         std::string projectileText = ProjectileFactory::getDisplayName(currentProjectile);
 
         text("Particle Count: " + std::to_string(Particle<float>::particleCount) +
-            "    FPS: " + std::to_string(Processing::PApplet::getFrameRate()), 15, 30);
+            "    FPS: " + std::to_string(std::lround(Processing::PApplet::getFrameRate())) +
+            "   ms/frame: " + std::to_string(std::lround(deltaTime * 1000.0f)), 15, 30);
         text("Aim Mode [M]: " + modeText, 15, 60);
         text("Current Projectile [Scroll]: " + projectileText, 15, 90);
         text(std::string("Display trajectories for all projectiles [T]: ") + (showTrajectories ? "ON" : "OFF"), 15, 120);
