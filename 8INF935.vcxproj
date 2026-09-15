@@ -151,10 +151,6 @@
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="Ball.cpp" />
-    <ClCompile Include="Bullet.cpp" />
-    <ClCompile Include="Fireball.cpp" />
-    <ClCompile Include="Laser.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Point3DTests.cpp" />
     <ClCompile Include="processing-cpp\src\Processing.cpp" />
@@ -164,6 +160,8 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="AimSolvers.h" />
+    <ClInclude Include="Arena.h" />
     <ClInclude Include="Ball.h" />
     <ClInclude Include="Bullet.h" />
     <ClInclude Include="Fireball.h" />
@@ -175,6 +173,9 @@
     <ClInclude Include="PhysicsEngine.h" />
     <ClInclude Include="Point3D.h" />
     <ClInclude Include="Point3DTests.h" />
+    <ClInclude Include="ProjectileFactory.h" />
+    <ClInclude Include="Sketch.h" />
+    <ClInclude Include="TargetGoal.h" />
     <ClInclude Include="Test.h" />
     <ClInclude Include="TestHelpers.h" />
     <ClInclude Include="Vector3D.h" />
