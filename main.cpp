@@ -168,6 +168,9 @@ struct Sketch : public Processing::PApplet {
     AimMode currentAimMode{ AimMode::TurretSpherical };
     SelectedProjectile currentProjectile{ SelectedProjectile::Bullet };
     bool showTrajectories{ false };
+    int goals{ 0 };
+    float goalRadius{ 120.0f };
+    Point3D<float> currentGoal{ 0.0f, -floorY, 600.0f }; // In front of the camera on the floor
 
     void settings() override {
         size(ScreenWidth, ScreenHeight, Processing::P3D);
@@ -269,6 +272,19 @@ private:
         } 
     }
 
+    void resetGoal() {
+        // static engine ensures the generator state advances on every call rather than resetting
+        static std::mt19937 rng(std::random_device{}());
+
+        std::uniform_real_distribution<float> distX(-800.0f, 800.0f);
+        std::uniform_real_distribution<float> distZ(300.0f, 1500.0f);
+
+        float rx = distX(rng);
+        float rz = distZ(rng);
+
+        currentGoal = Point3D<float>(rx, -floorY, rz);
+    }
+
     void renderEnvironment() {
         background(18, 24, 38);
         camera(0.0f, -40.0f, -520.0f,
@@ -309,14 +325,28 @@ private:
                 noStroke();
             }
 
-            // Cull particles that fall below the boundary
             constexpr float extent = 2560.0f;
             constexpr float maxHeight = 2000.0f;
 
             const Point3D<float>& pos = particle->getPosition();
 
+            // Check if particle hit the ground
+            bool hitFloor = (pos.getY() <= -floorY);
+
+            // Check if impact happened inside the goal area (XZ 2D distance)
+            if (hitFloor) {
+                float dx = pos.getX() - currentGoal.getX();
+                float dz = pos.getZ() - currentGoal.getZ();
+                float distSq = dx * dx + dz * dz;
+
+                if (distSq <= (goalRadius * goalRadius)) {
+                    ++goals;
+                    resetGoal(); // Move target to a new spot when hit
+                }
+            }
+
             // Cull if particle hits floor, exceeds max ceiling height, or crosses wall boundaries
-            bool outOfBounds = (pos.getY() <= -floorY) ||
+            bool outOfBounds = hitFloor ||
                 (pos.getY() >= maxHeight) ||
                 (std::abs(pos.getX()) >= extent) ||
                 (std::abs(pos.getZ()) >= extent);
@@ -377,6 +407,7 @@ private:
         text("Aim Mode [M]: " + modeText, 15, 60);
         text("Current Projectile [Scroll]: " + projectileText, 15, 90);
         text("Display trajectories for all projectiles [T]: " + showTrajectories, 15, 120);
+        text("Score / Goals: " + std::to_string(goals), 15, 150);
     }
 
     void drawFloor() {
@@ -400,6 +431,28 @@ private:
             line(coordinate, floorY, -extent, coordinate, floorY, extent);
             line(-extent, floorY, coordinate, extent, floorY, coordinate);
         }
+        noStroke();
+
+        // --- Target Goal (Circle on Floor) ---
+        pushMatrix();
+        // Top of floor slab is at (floorY - 4.0f). Place circle at floorY - 4.5f
+        translate(currentGoal.getX(), floorY - 4.5f, currentGoal.getZ());
+
+        // Face normal upward toward the camera (negative rotation)
+        rotateX(-std::numbers::pi_v<float> *0.5f);
+
+        // Outer Ring
+        fill(255, 50, 50, 220);
+        stroke(255, 180, 180);
+        strokeWeight(3.0f);
+        circle(0.0f, 0.0f, goalRadius * 2.0f);
+
+        // Bullseye Inner Disc
+        fill(255, 220, 30, 240);
+        noStroke();
+        circle(0.0f, 0.0f, goalRadius * 0.8f);
+
+        popMatrix();
         noStroke();
 
         // --- Boundary Walls (North, South, East, West) ---
