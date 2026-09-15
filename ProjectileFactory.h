@@ -5,6 +5,7 @@
 #include "Ball.h"
 #include "Laser.h"
 #include "Fireball.h"
+#include "Confetti.h"
 #include <memory>
 #include <string>
 
@@ -13,6 +14,7 @@ enum class SelectedProjectile {
     Ball,
     Laser,
     Fireball,
+    Confetti,
     Count
 };
 
@@ -23,6 +25,7 @@ public:
         case SelectedProjectile::Ball:     return Ball::baseSpeed;
         case SelectedProjectile::Laser:    return Laser::baseSpeed;
         case SelectedProjectile::Fireball: return Fireball::baseSpeed;
+        case SelectedProjectile::Confetti: return Confetti::baseSpeed;
         case SelectedProjectile::Bullet:
         default:                           return Bullet::baseSpeed;
         }
@@ -33,6 +36,7 @@ public:
         case SelectedProjectile::Ball:     return "Cannon ball";
         case SelectedProjectile::Laser:    return "Laser";
         case SelectedProjectile::Fireball: return "Fireball";
+        case SelectedProjectile::Confetti: return "Confetti";
         case SelectedProjectile::Bullet:
         default:                           return "Bullet";
         }
@@ -50,6 +54,8 @@ public:
             return std::make_unique<Laser>(origin, velocity);
         case SelectedProjectile::Fireball:
             return std::make_unique<Fireball>(origin, velocity);
+        case SelectedProjectile::Confetti: 
+            return std::make_unique<Confetti>(origin, velocity);
         case SelectedProjectile::Bullet:
         default:
             return std::make_unique<Bullet>(origin, velocity);

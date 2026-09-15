@@ -17,14 +17,19 @@ struct Sketch : public Processing::PApplet {
     SelectedProjectile currentProjectile{ SelectedProjectile::Bullet };
     bool showTrajectories{ false };
     TargetGoal goal{ 120.0f };
+    float custumDeltaTime{};
+    float custumFPS{};
 
     void settings() override {
         size(ScreenWidth, ScreenHeight, Processing::P3D);
+        frameRate(240);
     }
 
     void setup() override {}
 
     void draw() override {
+        actualiseDeltaTime();
+
         Arena::setupLighting(*this);
         Arena::draw(*this);
         goal.draw(*this);
@@ -39,6 +44,17 @@ struct Sketch : public Processing::PApplet {
         particles.push_back(
             ProjectileFactory::create(currentProjectile, Point3D<float>(0.0f, 0.0f, 0.0f), velocity)
         );
+    }
+
+    void actualiseDeltaTime() {
+        static auto lastTime = std::chrono::steady_clock::now();
+        auto currentTime = std::chrono::steady_clock::now();
+
+        std::chrono::duration<float, std::milli> elapsedMs = currentTime - lastTime;
+        lastTime = currentTime;
+
+        custumDeltaTime = elapsedMs.count() / 1000.0f;
+        custumFPS = 1 / custumDeltaTime;
     }
 
     void mouseWheel(int delta) override {
@@ -84,7 +100,7 @@ private:
         for (auto it = particles.begin(); it != particles.end();) {
             auto& particle = *it;
 
-            particle->applyVerletIntegration(deltaTime);
+            particle->applyVerletIntegration(custumDeltaTime);
             particle->draw();
 
             if (showTrajectories) {
@@ -106,14 +122,6 @@ private:
     void renderParticleTrace(Particle<float>& particle) {
         std::vector<Point3D<float>> trajectory = particle.getTrajectory(20, 10.0f);
 
-        for (const auto& point : trajectory) {
-            pushMatrix();
-            translate(point.getX(), -point.getY(), point.getZ());
-            fill(255, 255, 0, 100);
-            sphere(2.0f);
-            popMatrix();
-        }
-
         stroke(255, 255, 0, 150);
         strokeWeight(2.0f);
         for (size_t i = 0; i + 1 < trajectory.size(); ++i) {
@@ -128,7 +136,14 @@ private:
         Vector3D<float> gravity(0.0f, -static_cast<float>(GRAVITY), 0.0f);
         Vector3D<float> aimVelocity = computeCurrentAimVelocity();
 
-        auto aimTrajectory = predictAimTrajectory(origin, aimVelocity, gravity, 0.999f, 35, 30.0f);
+        //temporary, should be accessible in particle decleration
+        Vector3D<float> acceleration{};
+
+        if (currentProjectile == SelectedProjectile::Bullet || currentProjectile == SelectedProjectile::Ball || currentProjectile == SelectedProjectile::Fireball)
+            acceleration += gravity;
+
+
+        auto aimTrajectory = predictAimTrajectory(origin, aimVelocity, acceleration, 0.999f, 35, 30.0f);
 
         stroke(0, 255, 128, 180);
         strokeWeight(2.0f);
@@ -155,8 +170,8 @@ private:
         std::string projectileText = ProjectileFactory::getDisplayName(currentProjectile);
 
         text("Particle Count: " + std::to_string(Particle<float>::particleCount) +
-            "    FPS: " + std::to_string(std::lround(Processing::PApplet::getFrameRate())) +
-            "   ms/frame: " + std::to_string(std::lround(deltaTime * 1000.0f)), 15, 30);
+            "    FPS: " + std::to_string(std::lround(custumFPS)) +
+            "   ms/frame: " + std::to_string(std::lround(custumDeltaTime * 1000.0f)), 15, 30);
         text("Aim Mode [M]: " + modeText, 15, 60);
         text("Current Projectile [Scroll]: " + projectileText, 15, 90);
         text(std::string("Display trajectories for all projectiles [T]: ") + (showTrajectories ? "ON" : "OFF"), 15, 120);

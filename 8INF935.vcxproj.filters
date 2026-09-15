@@ -122,5 +122,8 @@
     <ClInclude Include="ParticleTests.h">
       <Filter>Header Files\Physics\Tests</Filter>
     </ClInclude>
+    <ClInclude Include="Confetti.h">
+      <Filter>Header Files\Game</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
