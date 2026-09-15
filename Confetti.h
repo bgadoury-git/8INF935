@@ -4,12 +4,12 @@
 class Confetti : public Particle<float>
 {
 public:
-    Confetti(const Point3D<float>& pos = {}, const Vector3D<float>& vel = {})
-        : Particle(pos, vel, {}, 0.1f, 0.999f, false)
-    {
-    }
-
     inline static const float baseSpeed{ 50.0f };
+    inline static const bool defaultGravityState{ false };
+
+    Confetti(const Point3D<float>& pos = {}, const Vector3D<float>& vel = {})
+        : Particle(pos, vel, {}, 0.1f, 0.999f, defaultGravityState){
+    }
 
     void draw() const override {
         auto* applet = Processing::PApplet::g_papplet;

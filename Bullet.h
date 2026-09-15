@@ -6,11 +6,12 @@
 class Bullet : public Particle<float>
 {
 public:
-    Bullet(const Point3D<float>& pos = {}, const Vector3D<float>& vel = {})
-        : Particle(pos, vel, {}, 0.1f, 0.999f, true) {
-    }
+    inline static const float baseSpeed{ 500.0f };
+    inline static const bool defaultGravityState{ true };
 
-    inline static const float baseSpeed { 500.0f };
+    Bullet(const Point3D<float>& pos = {}, const Vector3D<float>& vel = {})
+        : Particle(pos, vel, {}, 0.1f, 0.999f, defaultGravityState) {
+    }
  
     void draw() const override {
         const auto pos = getPosition();

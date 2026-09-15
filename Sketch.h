@@ -108,9 +108,8 @@ private:
             }
 
             const Point3D<float>& pos = particle->getPosition();
-            goal.checkHit(pos);
-
-            if (Arena::isOutOfBounds(pos)) {
+            
+            if (goal.checkHit(pos) || Arena::isOutOfBounds(pos)) {
                 it = particles.erase(it); // unique_ptr automatically frees memory
             }
             else {
@@ -136,12 +135,10 @@ private:
         Vector3D<float> gravity(0.0f, -static_cast<float>(GRAVITY), 0.0f);
         Vector3D<float> aimVelocity = computeCurrentAimVelocity();
 
-        //temporary, should be accessible in particle decleration
         Vector3D<float> acceleration{};
 
-        if (currentProjectile == SelectedProjectile::Bullet || currentProjectile == SelectedProjectile::Ball || currentProjectile == SelectedProjectile::Fireball)
+        if (ProjectileFactory::getDefaultGravityState(currentProjectile))
             acceleration += gravity;
-
 
         auto aimTrajectory = predictAimTrajectory(origin, aimVelocity, acceleration, 0.999f, 35, 30.0f);
 

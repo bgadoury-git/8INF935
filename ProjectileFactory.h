@@ -31,6 +31,18 @@ public:
         }
     }
 
+    static bool getDefaultGravityState(SelectedProjectile type) {
+        switch (type) {
+        case SelectedProjectile::Ball:     return Ball::defaultGravityState;
+        case SelectedProjectile::Laser:    return Laser::defaultGravityState;
+        case SelectedProjectile::Fireball: return Fireball::defaultGravityState;
+        case SelectedProjectile::Confetti: return Confetti::defaultGravityState;
+        case SelectedProjectile::Bullet:
+        default:                           return Bullet::defaultGravityState;
+        }
+    }
+
+
     static std::string getDisplayName(SelectedProjectile type) {
         switch (type) {
         case SelectedProjectile::Ball:     return "Cannon ball";

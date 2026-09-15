@@ -7,11 +7,12 @@
 class Laser : public Particle<float>
 {
 public:
-    Laser(const Point3D<float>& pos = {}, const Vector3D<float>& vel = {})
-        : Particle(pos, vel, {}, 0.1f, 0.999f, false) {
-    }
-
     inline static const float baseSpeed{ 5000.0f };
+    inline static const bool defaultGravityState{ false };
+
+    Laser(const Point3D<float>& pos = {}, const Vector3D<float>& vel = {})
+        : Particle(pos, vel, {}, 0.1f, 0.999f, defaultGravityState) {
+    }
 
     void draw() const override {
         const auto pos = getPosition();

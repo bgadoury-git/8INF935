@@ -7,11 +7,12 @@
 class Ball : public Particle<float>
 {
 public:
-    Ball(const Point3D<float>& pos = {}, const Vector3D<float>& vel = {})
-        : Particle(pos, vel, {}, 0.1f, 0.999f, true) {
-    }
-
     inline static const float baseSpeed{ 50.0f };
+    inline static const bool defaultGravityState{ true };
+
+    Ball(const Point3D<float>& pos = {}, const Vector3D<float>& vel = {})
+        : Particle(pos, vel, {}, 0.1f, 0.999f, defaultGravityState) {
+    }
 
     void draw() const override {
         const auto pos = getPosition();
