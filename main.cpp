@@ -1,12 +1,16 @@
 #include "Processing.h"
 #include "PhysicsEngine.h"
 #include "Bullet.h"
+#include "Ball.h"
+#include "Laser.h"
+#include "Fireball.h"
 #include "GraphicsConstants.h"
 #include <vector>
 #include <cmath>
 #include <memory>
 #include <numbers>
 #include <string>
+#include <algorithm>
 
 #ifdef _DEBUG
 #include "Test.h"
@@ -112,15 +116,27 @@ inline Vector3D<float> getAimTurret(
     float screenWidth, float screenHeight,
     float speed = 500.0f)
 {
-    float u = (mouseX - screenWidth * 0.5f) / (screenWidth * 0.5f);
-    float v = (mouseY - screenHeight * 0.5f) / (screenHeight * 0.5f);
+    // Clamp coordinates so moving past window edges doesn't pop or cause erratic jumps
+    float clampedX = std::clamp(mouseX, 0.0f, screenWidth);
+    float clampedY = std::clamp(mouseY, 0.0f, screenHeight);
 
-    constexpr float maxYaw = 1.047197f;    // ~60 degrees
-    constexpr float minPitch = -0.174533f; // ~ -10 degrees
-    constexpr float maxPitch = 1.308997f;  // ~ 75 degrees
+    // Normalized screen coordinates: 0.0 (top) to 1.0 (bottom)
+    float normY = clampedY / screenHeight;
+    float normX = (clampedX - screenWidth * 0.5f) / (screenWidth * 0.5f);
 
-    float yaw = -u * maxYaw;
-    float pitch = minPitch + (1.0f - (v + 1.0f) * 0.5f) * (maxPitch - minPitch);
+    // Yaw range: ~60 degrees left/right
+    constexpr float maxYaw = 1.047197f;
+    float yaw = -normX * maxYaw;
+
+    // Pitch range: Allow aiming down to ~ -55 degrees and up to ~ 70 degrees
+    constexpr float minPitch = -0.959931f; // ~ -55 degrees (steep downward aim)
+    constexpr float maxPitch = 1.221730f; // ~ +70 degrees (upward aim)
+
+    // Smoothstep interpolation for gradual, fluid response
+    float smoothT = normY * normY * (3.0f - 2.0f * normY);
+
+    // Invert mapping: top of screen (normY=0) -> maxPitch, bottom (normY=1) -> minPitch
+    float pitch = maxPitch - smoothT * (maxPitch - minPitch);
 
     Vector3D<float> dir(
         std::sin(yaw) * std::cos(pitch),
@@ -136,6 +152,12 @@ inline Vector3D<float> getAimTurret(
 // Bullet selection
 // =============================================================================
 
+enum class SelectedProjectile {
+    Bullet,
+    Ball,
+    Laser,
+    Fireball
+};
 
 // =============================================================================
 // Application Sketch
@@ -143,15 +165,16 @@ inline Vector3D<float> getAimTurret(
 
 struct Sketch : public Processing::PApplet {
     std::vector<Particle<float>*> particles;
-    AimMode currentAimMode{ AimMode::RayGroundTarget };
-    constexpr static float bulletMuzzleSpeed{ 500.0f };
+    AimMode currentAimMode{ AimMode::TurretSpherical };
+    SelectedProjectile currentProjectile{ SelectedProjectile::Bullet };
+    bool showTrajectories{ false };
 
     void settings() override {
         size(ScreenWidth, ScreenHeight, Processing::P3D);
     }
 
     void setup() override {
-        spawnBullet(computeCurrentAimVelocity());
+        //spawnBullet(computeCurrentAimVelocity());
     }
 
     void draw() override {
@@ -165,12 +188,32 @@ struct Sketch : public Processing::PApplet {
         spawnBullet(computeCurrentAimVelocity());
     }
 
+    void mouseWheel(int delta) override {
+        constexpr int optionCount = 4;
+
+        // In Processing, scrolling "down" typically yields delta > 0, scrolling "up" yields delta < 0.
+        int step = (delta > 0) ? 1 : -1;
+
+        int currentIndex = static_cast<int>(currentProjectile);
+        int nextIndex = (currentIndex + step) % optionCount;
+
+        // Handle negative modulo when scrolling backwards
+        if (nextIndex < 0) {
+            nextIndex += optionCount;
+        }
+
+        currentProjectile = static_cast<SelectedProjectile>(nextIndex);
+    }
+
     void keyPressed() override {
         // Press 'M' to toggle between Raycast and Turret aiming models
         if (key == 'm' || key == 'M') {
             currentAimMode = (currentAimMode == AimMode::RayGroundTarget)
                 ? AimMode::TurretSpherical
                 : AimMode::RayGroundTarget;
+        }
+        if (key == 't' || key == 'T') {
+            showTrajectories = !showTrajectories;
         }
     }
 
@@ -183,13 +226,25 @@ struct Sketch : public Processing::PApplet {
 
 private:
     Vector3D<float> computeCurrentAimVelocity() const {
+        float MuzzleSpeed {};
+        switch (currentProjectile) {
+        case SelectedProjectile::Ball: MuzzleSpeed = Ball::baseSpeed;
+            break;
+        case SelectedProjectile::Laser: MuzzleSpeed = Laser::baseSpeed;
+            break;
+        case SelectedProjectile::Fireball: MuzzleSpeed = Fireball::baseSpeed;
+            break;
+        case SelectedProjectile::Bullet: 
+        default : MuzzleSpeed = Bullet::baseSpeed;
+        }
+
         if (currentAimMode == AimMode::RayGroundTarget) {
             return getAimGroundTarget(
                 static_cast<float>(mouseX),
                 static_cast<float>(mouseY),
                 static_cast<float>(width),
                 static_cast<float>(height),
-                bulletMuzzleSpeed
+                MuzzleSpeed
             );
         }
         return getAimTurret(
@@ -197,12 +252,21 @@ private:
             static_cast<float>(mouseY),
             static_cast<float>(width),
             static_cast<float>(height),
-            bulletMuzzleSpeed
+            MuzzleSpeed
         );
     }
 
     void spawnBullet(const Vector3D<float>& initialVelocity) {
-        particles.push_back(new Bullet(Point3D<float>(0.0f, 0.0f, 0.0f), initialVelocity));
+        switch (currentProjectile) {
+        case SelectedProjectile::Ball: particles.push_back(new Ball(Point3D<float>(0.0f, 0.0f, 0.0f), initialVelocity));
+            break;
+        case SelectedProjectile::Laser: particles.push_back(new Laser(Point3D<float>(0.0f, 0.0f, 0.0f), initialVelocity));
+            break;
+        case SelectedProjectile::Fireball: particles.push_back(new Fireball(Point3D<float>(0.0f, 0.0f, 0.0f), initialVelocity));
+            break;
+        case SelectedProjectile::Bullet: 
+        default: particles.push_back(new Bullet(Point3D<float>(0.0f, 0.0f, 0.0f), initialVelocity));
+        } 
     }
 
     void renderEnvironment() {
@@ -224,27 +288,40 @@ private:
             particle->applyVerletIntegration(deltaTime);
             particle->draw();
 
-            // Render live trajectory trace
-            std::vector<Point3D<float>> trajectory = particle->getTrajectory(20, 10.0f);
+            if (showTrajectories) {
+                // Render live trajectory trace
+                std::vector<Point3D<float>> trajectory = particle->getTrajectory(20, 10.0f);
 
-            for (const auto& point : trajectory) {
-                pushMatrix();
-                translate(point.getX(), -point.getY(), point.getZ());
-                fill(255, 255, 0, 100);
-                sphere(2.0f);
-                popMatrix();
-            }
+                for (const auto& point : trajectory) {
+                    pushMatrix();
+                    translate(point.getX(), -point.getY(), point.getZ());
+                    fill(255, 255, 0, 100);
+                    sphere(2.0f);
+                    popMatrix();
+                }
 
-            stroke(255, 255, 0, 150);
-            strokeWeight(2.0f);
-            for (size_t i = 0; i + 1 < trajectory.size(); ++i) {
-                line(trajectory[i].getX(), -trajectory[i].getY(), trajectory[i].getZ(),
-                    trajectory[i + 1].getX(), -trajectory[i + 1].getY(), trajectory[i + 1].getZ());
+                stroke(255, 255, 0, 150);
+                strokeWeight(2.0f);
+                for (size_t i = 0; i + 1 < trajectory.size(); ++i) {
+                    line(trajectory[i].getX(), -trajectory[i].getY(), trajectory[i].getZ(),
+                        trajectory[i + 1].getX(), -trajectory[i + 1].getY(), trajectory[i + 1].getZ());
+                }
+                noStroke();
             }
-            noStroke();
 
             // Cull particles that fall below the boundary
-            if (particle->getPosition().getY() <= -floorY) {
+            constexpr float extent = 2560.0f;
+            constexpr float maxHeight = 2000.0f;
+
+            const Point3D<float>& pos = particle->getPosition();
+
+            // Cull if particle hits floor, exceeds max ceiling height, or crosses wall boundaries
+            bool outOfBounds = (pos.getY() <= -floorY) ||
+                (pos.getY() >= maxHeight) ||
+                (std::abs(pos.getX()) >= extent) ||
+                (std::abs(pos.getZ()) >= extent);
+
+            if (outOfBounds) {
                 delete particle;
                 it = particles.erase(it);
             }
@@ -259,7 +336,7 @@ private:
         Vector3D<float> gravity(0.0f, -static_cast<float>(GRAVITY), 0.0f);
         Vector3D<float> aimVelocity = computeCurrentAimVelocity();
 
-        auto aimTrajectory = predictAimTrajectory(origin, aimVelocity, gravity, 0.999f, 35, 10.0f);
+        auto aimTrajectory = predictAimTrajectory(origin, aimVelocity, gravity, 0.999f, 35, 30.0f);
 
         stroke(0, 255, 128, 180);
         strokeWeight(2.0f);
@@ -283,15 +360,32 @@ private:
             ? "Ground Target Plane (Raycast)"
             : "Turret (Pitch/Yaw Spherical)";
 
+        std::string projectileText{};
+        switch (currentProjectile) {
+        case SelectedProjectile::Ball: projectileText = "Cannon ball";
+            break;
+        case SelectedProjectile::Laser: projectileText = "Laser";
+            break;
+        case SelectedProjectile::Fireball: projectileText = "Fireball";
+            break;
+        case SelectedProjectile::Bullet: 
+        default: projectileText = "Bullet";
+        }
+
         text("Particle Count: " + std::to_string(Particle<float>::particleCount) +
             "    FPS: " + std::to_string(Processing::PApplet::getFrameRate()), 15, 30);
         text("Aim Mode [M]: " + modeText, 15, 60);
+        text("Current Projectile [Scroll]: " + projectileText, 15, 90);
+        text("Display trajectories for all projectiles [T]: " + showTrajectories, 15, 120);
     }
 
     void drawFloor() {
         constexpr float extent = 2560.0f;
         constexpr float spacing = 40.0f;
+        constexpr float wallHeight = 1200.0f;
+        constexpr float wallThickness = 10.0f;
 
+        // --- Floor Base ---
         noStroke();
         fill(35, 48, 68);
         pushMatrix();
@@ -299,6 +393,7 @@ private:
         box(extent * 2.0f, 4.0f, extent * 2.0f);
         popMatrix();
 
+        // --- Floor Grid ---
         stroke(90, 110, 140);
         strokeWeight(1.0f);
         for (float coordinate = -extent; coordinate <= extent; coordinate += spacing) {
@@ -306,6 +401,32 @@ private:
             line(-extent, floorY, coordinate, extent, floorY, coordinate);
         }
         noStroke();
+
+        // --- Boundary Walls (North, South, East, West) ---
+        fill(45, 60, 85, 180); // Semi-transparent boundary tint
+        float wallCenterY = floorY - (wallHeight * 0.5f);
+
+        // Near / Far Walls (Along X, offset in Z)
+        pushMatrix();
+        translate(0.0f, wallCenterY, -extent);
+        box(extent * 2.0f, wallHeight, wallThickness);
+        popMatrix();
+
+        pushMatrix();
+        translate(0.0f, wallCenterY, extent);
+        box(extent * 2.0f, wallHeight, wallThickness);
+        popMatrix();
+
+        // Left / Right Walls (Along Z, offset in X)
+        pushMatrix();
+        translate(-extent, wallCenterY, 0.0f);
+        box(wallThickness, wallHeight, extent * 2.0f);
+        popMatrix();
+
+        pushMatrix();
+        translate(extent, wallCenterY, 0.0f);
+        box(wallThickness, wallHeight, extent * 2.0f);
+        popMatrix();
     }
 };
 

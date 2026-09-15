@@ -153,6 +153,8 @@
   <ItemGroup>
     <ClCompile Include="Ball.cpp" />
     <ClCompile Include="Bullet.cpp" />
+    <ClCompile Include="Fireball.cpp" />
+    <ClCompile Include="Laser.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Point3DTests.cpp" />
     <ClCompile Include="processing-cpp\src\Processing.cpp" />
@@ -164,6 +166,8 @@
   <ItemGroup>
     <ClInclude Include="Ball.h" />
     <ClInclude Include="Bullet.h" />
+    <ClInclude Include="Fireball.h" />
+    <ClInclude Include="Laser.h" />
     <ClInclude Include="PhysicsConstants.h" />
     <ClInclude Include="GraphicsConstants.h" />
     <ClInclude Include="MathHelpers.h" />
