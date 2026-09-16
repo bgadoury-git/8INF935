@@ -12,6 +12,8 @@
 #include <cmath>
 #include <chrono>
 #include <format>
+#include <random>
+#include <numbers>
 
 enum class GameState {
     Menu,
@@ -31,6 +33,7 @@ struct Sketch : public Processing::PApplet {
     bool showTrajectories{ false };
     TargetGoal goal{ 120.0f };
     float totalTime{};
+    int confettiCount{ 1000 };
 
     // --- Timing ---
     float customDeltaTime{};
@@ -101,6 +104,7 @@ struct Sketch : public Processing::PApplet {
         Arena::draw(*this);
         goal.draw(*this);
 
+        spawnConfettis(confettiCount * deltaTime);
         updateAndRenderParticles();
         renderAimPreview();
         renderHUD();
@@ -189,6 +193,11 @@ struct Sketch : public Processing::PApplet {
             if (key == 'g' || key == 'G') {
                 currentState = GameState::GameOver;
             }
+
+            if (key == 'w' || key == 'W')
+                confettiCount += 100;
+            if ((key == 's' || key == 'S') && confettiCount > 0)
+                confettiCount -= 100;
         }
     }
 
@@ -307,5 +316,40 @@ private:
         text("Current Projectile [Scroll]: " + projectileText, 15, 90);
         text(std::string("Display trajectories [T]: ") + (showTrajectories ? "ON" : "OFF"), 15, 120);
         text("Score : " + std::to_string(goal.getScore()) + "/" + neededGoal, 15, 150);
+        text("Confettis per seconds : " + std::to_string(confettiCount)  + " [W] + 100 [S] -100" , 15, 180);
+        text("Go to end scren : [G]", 15, 210);
+    }
+
+    void spawnConfettis(float quantity) {
+        // Random engine
+        static std::mt19937 rng(std::random_device{}());
+
+        // Cone parameters
+        const float maxSpreadAngle = 30.0f * (std::numbers::pi_v<float> / 180.0f); // 30-degree half-angle cone
+        const float cosMax = std::cos(maxSpreadAngle);
+
+        // Uniform distributions
+        std::uniform_real_distribution<float> distCosTheta(cosMax, 1.0f); // Uniform areal spread
+        std::uniform_real_distribution<float> distPhi(0.0f, 2.0f * std::numbers::pi_v<float>);
+        std::uniform_real_distribution<float> distSpeed(250.0f, 400.0f); // Variable launch speeds
+
+        for (int i = 0; i < quantity; ++i)
+        {
+            float cosTheta = distCosTheta(rng);
+            float sinTheta = std::sqrt(1.0f - cosTheta * cosTheta);
+            float phi = distPhi(rng);
+            float speed = distSpeed(rng);
+
+            // Directional vector pointed up (+Y) with spread along X and Z
+            Vector3D<float> velocity(
+                speed * sinTheta * std::cos(phi), // X (lateral)
+                speed * cosTheta,                 // Y (upward)
+                speed * sinTheta * std::sin(phi)  // Z (depth)
+            );
+
+            particles.push_back(
+                ProjectileFactory::create(SelectedProjectile::Confetti, Point3D<float>(0.0f, -floorY, 600.0f), velocity)
+            );
+        }
     }
 };

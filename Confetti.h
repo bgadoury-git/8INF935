@@ -1,11 +1,12 @@
 #include "Processing.h"
 #include "Particle.h"
+#include <random>
 
 class Confetti : public Particle<float>
 {
 public:
     inline static const float baseSpeed{ 50.0f };
-    inline static const bool defaultGravityState{ false };
+    inline static const bool defaultGravityState{ true };
 
     Confetti(const Point3D<float>& pos = {}, const Vector3D<float>& vel = {})
         : Particle(pos, vel, {}, 0.1f, 0.999f, defaultGravityState){
@@ -27,7 +28,14 @@ public:
         );
 
         // Single emissive line segment - no transforms, no matrix stack, no tessellation
-        applet->stroke(0, 255, 200, 255);
+        static std::mt19937 rng(std::random_device{}());
+        static std::uniform_int_distribution<int> dist(0, 255);
+
+        int r = dist(rng);
+        int g = dist(rng);
+        int b = dist(rng);
+
+        applet->stroke(r, g, b, 255);
         applet->strokeWeight(2.5f);
         applet->line(
             tail.getX(), -tail.getY(), tail.getZ(),
