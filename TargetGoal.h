@@ -12,6 +12,11 @@ public:
         : m_radius(radius), m_position(0.0f, -floorY, 600.0f), m_score(0) {
     }
 
+    void resetValues() {
+        m_score = 0;
+        m_position = { 0.0f, -floorY, 600.0f };
+    }
+
     void reset() {
         static std::mt19937 rng(std::random_device{}());
         std::uniform_real_distribution<float> distX(-800.0f, 800.0f);
