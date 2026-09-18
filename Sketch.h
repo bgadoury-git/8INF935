@@ -1,11 +1,12 @@
 #pragma once
 
-#include "Processing.h"
+#include "C:\Users\Admin\source\repos\8INF935\processing-cpp\include\Processing.h"
 #include "GraphicsConstants.h"
 #include "AimSolvers.h"
 #include "ProjectileFactory.h"
 #include "TargetGoal.h"
 #include "Arena.h"
+#include "PhysicsConstants.h"
 #include <vector>
 #include <memory>
 #include <string>
@@ -34,6 +35,7 @@ struct Sketch : public Processing::PApplet {
     TargetGoal goal{ 120.0f };
     float totalTime{};
     int confettiCount{ 1000 };
+    float accumulator{ 0 };
 
     // --- Timing ---
     float customDeltaTime{};
@@ -104,8 +106,19 @@ struct Sketch : public Processing::PApplet {
         Arena::draw(*this);
         goal.draw(*this);
 
-        spawnConfettis(confettiCount * deltaTime);
-        updateAndRenderParticles();
+        spawnConfettis(confettiCount * customDeltaTime);
+
+        // Clamp frame time to handle hitches/breakpoints
+        float frameTime = std::min(customDeltaTime, MAX_FRAME_TIME);
+
+        accumulator += frameTime;
+
+        while (accumulator >= FIXED_TIMESTEP) {
+            updateParticles(FIXED_TIMESTEP); // Pass fixed step, not variable time!
+            accumulator -= FIXED_TIMESTEP;
+        }
+
+        RenderParticles();
         renderAimPreview();
         renderHUD();
 
@@ -211,8 +224,8 @@ struct Sketch : public Processing::PApplet {
         customDeltaTime = elapsedMs.count() / 1000.0f;
         customFPS = (customDeltaTime > 0.0f) ? (1.0f / customDeltaTime) : 0.0f;
 
-        if(currentState == GameState::Playing)
-        totalTime += customDeltaTime;
+        if (currentState == GameState::Playing)
+            totalTime += customDeltaTime;
     }
 
 private:
@@ -239,16 +252,10 @@ private:
         );
     }
 
-    void updateAndRenderParticles() {
+    void updateParticles(float timestep){
         for (auto it = particles.begin(); it != particles.end();) {
             auto& particle = *it;
-
-            particle->applyVerletIntegration(customDeltaTime);
-            particle->draw();
-
-            if (showTrajectories) {
-                renderParticleTrace(*particle);
-            }
+            particle->applyVerletIntegration(timestep);
 
             const Point3D<float>& pos = particle->getPosition();
 
@@ -258,6 +265,20 @@ private:
             else {
                 ++it;
             }
+        }
+    }
+
+    void RenderParticles() {
+        for (auto it = particles.begin(); it != particles.end();) {
+            auto& particle = *it;
+
+            particle->draw();
+
+            if (showTrajectories) {
+                renderParticleTrace(*particle);
+            }
+
+            ++it;
         }
     }
 
@@ -316,7 +337,7 @@ private:
         text("Current Projectile [Scroll]: " + projectileText, 15, 90);
         text(std::string("Display trajectories [T]: ") + (showTrajectories ? "ON" : "OFF"), 15, 120);
         text("Score : " + std::to_string(goal.getScore()) + "/" + neededGoal, 15, 150);
-        text("Confettis per seconds : " + std::to_string(confettiCount)  + " [W] + 100 [S] -100" , 15, 180);
+        text("Confettis per seconds : " + std::to_string(confettiCount) + " [W] + 100 [S] -100", 15, 180);
         text("Go to end scren : [G]", 15, 210);
     }
 
