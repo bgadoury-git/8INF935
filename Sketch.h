@@ -17,6 +17,7 @@
 #include <numbers>
 #include <array>
 #include <algorithm>
+#include <omp.h>
 
 enum class GameState {
     Menu,
@@ -33,7 +34,7 @@ struct Sketch : public Processing::PApplet {
     std::vector<std::unique_ptr<Particle<float>>> particles;
 
     // Contiguous Swap-and-Pop Pool
-    static constexpr size_t MAX_CONFETTI_POOL = 1'000'000;
+    static constexpr size_t MAX_CONFETTI_POOL = 2'500'000;
     std::array<Confetti, MAX_CONFETTI_POOL> Confettis;
     int activeConfetti{ 0 };
     float confettiSpawnAccumulator{ 0.0f };
@@ -44,7 +45,7 @@ struct Sketch : public Processing::PApplet {
     bool showTrajectories{ false };
     TargetGoal goal{ 120.0f };
     float totalTime{};
-    int confettiSpawnAmount{ 50'000 };
+    int confettiSpawnAmount{ 100'000 };
     float accumulator{ 0 };
     bool solidColor{ true };
 
@@ -281,7 +282,7 @@ private:
     }
 
     void updateParticles(float timestep) {
-        // Projectile update
+        // 1. Dynamic player projectiles (kept sequential due to small count and vector erasure)
         for (auto it = particles.begin(); it != particles.end();) {
             auto& particle = *it;
             particle->applyVerletIntegration(timestep);
@@ -296,22 +297,29 @@ private:
             }
         }
 
-        // Confetti: Strictly packed iteration with swap-and-pop removal
-        for (size_t i = 0; i < static_cast<size_t>(activeConfetti);) {
-            #pragma omp parallel for schedule(static)
-            for (int i = 0; i < activeConfetti; ++i) {
-                Confettis[i].applyVerletIntegration(timestep);
-            }
-            
-            //const Point3D<float>& pos = Confettis[i].getPosition();
-            //if (goal.checkHit(pos) || Arena::isOutOfBounds(pos)) {
-            //    killConfetti(i);
-                // Do NOT increment i: the swapped particle at index i must be processed next
-            // }
-            //else {
-                ++i;
-           // }
+        // 2. Parallel Confetti Verlet Integration
+        // Distribute the 1,000,000 elements across all available CPU cores
+        const int count = activeConfetti;
+
+        #pragma omp parallel for schedule(static)
+        for (int i = 0; i < count; ++i) {
+            Confettis[i].applyVerletIntegration(timestep);
         }
+
+        // 3. Optional: Sequential Culling pass
+        // If you re-enable goal hit or arena boundary culling, run it here sequentially
+        // so swap-and-pop (killConfetti) does not cause thread collisions:
+        /*
+        for (size_t i = 0; i < static_cast<size_t>(activeConfetti);) {
+            const Point3D<float>& pos = Confettis[i].getPosition();
+            if (goal.checkHit(pos) || Arena::isOutOfBounds(pos)) {
+                killConfetti(i);
+            }
+            else {
+                ++i;
+            }
+        }
+        */
     }
 
     struct RGBColor {
