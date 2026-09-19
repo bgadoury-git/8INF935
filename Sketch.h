@@ -19,7 +19,6 @@
 #include <algorithm>
 #include <omp.h>
 #include <windows.h>
-#include <string>
 
 enum class GameState {
     Menu,
@@ -36,7 +35,7 @@ struct Sketch : public Processing::PApplet {
     std::vector<std::unique_ptr<Particle<float>>> particles;
 
     // Contiguous Swap-and-Pop Pool
-    static constexpr size_t MAX_CONFETTI_POOL = 10'000'000;
+    static constexpr size_t MAX_CONFETTI_POOL = 2'000'000;
     std::array<Confetti, MAX_CONFETTI_POOL> Confettis;
     int activeConfetti{ 0 };
     float confettiSpawnAccumulator{ 0.0f };
@@ -685,7 +684,7 @@ private:
         text("Active Confettis: " + formatWithCommas(activeConfetti), 15, 240);
         text("Make Confettis uniform: [C]", 15, 270);
         text("VBO enabled [V] " + std::string(useVBO ? "ON" : "OFF"), 15, 300);
-        text("Cull confettis at floor level [V] " + std::string(cullConfettis ? "ON" : "OFF"), 15, 300);
+        text("Cull confettis at floor level [V] " + std::string(cullConfettis ? "ON" : "OFF"), 15, 330);
     }
 
 void spawnConfettis(float quantity) {
