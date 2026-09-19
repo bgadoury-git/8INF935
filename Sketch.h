@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <omp.h>
 #include <windows.h>
+#include <string>
 
 enum class GameState {
     Menu,
@@ -53,6 +54,7 @@ struct Sketch : public Processing::PApplet {
     GLuint confettiVBO{ 0 };
     bool vboInitialized{ false };
     bool useVBO{ true };
+    bool cullConfettis{ false };
 
     // --- Timing ---
     float customDeltaTime{};
@@ -65,13 +67,14 @@ struct Sketch : public Processing::PApplet {
     }
 
     void setup() override {
+        /*
         // Disable VSync to completely uncap the frame rate from the monitor refresh rate
             typedef BOOL(WINAPI* PFNWGLSWAPINTERVALEXTPROC)(int);
         PFNWGLSWAPINTERVALEXTPROC wglSwapIntervalEXT =
             (PFNWGLSWAPINTERVALEXTPROC)wglGetProcAddress("wglSwapIntervalEXT");
         if (wglSwapIntervalEXT) {
             wglSwapIntervalEXT(0); // 0 = Disable VSync, 1 = Enable VSync
-        }
+        }*/
     }
 
     void draw() override {
@@ -337,16 +340,18 @@ private:
         // If you re-enable goal hit or arena boundary culling, run it here sequentially
         //so swap-and-pop (killConfetti) does not cause thread collisions:
         
-        for (size_t i = 0; i < static_cast<size_t>(activeConfetti);) {
-            const Point3D<float>& pos = Confettis[i].getPosition();
-            if (pos.getY() < -floorY) {
-                killConfetti(i);
-            }
-            else {
-                ++i;
+        if (cullConfettis)
+        {
+            for (size_t i = 0; i < static_cast<size_t>(activeConfetti);) {
+                const Point3D<float>& pos = Confettis[i].getPosition();
+                if (pos.getY() < -floorY) {
+                    killConfetti(i);
+                }
+                else {
+                    ++i;
+                }
             }
         }
-        
     }
 
     struct RGBColor {
@@ -644,6 +649,18 @@ private:
         noStroke();
     }
 
+    std::string formatWithCommas(int value) {
+        std::string s = std::to_string(value);
+        int n = static_cast<int>(s.length());
+        int insertPosition = n - 3;
+        while (insertPosition > 0) {
+            s.insert(insertPosition, ",");
+            insertPosition -= 3;
+        }
+        return s;
+    }
+
+
     void renderHUD() {
         reset2DContext();
         textAlign(Processing::LEFT, Processing::BASELINE);
@@ -656,18 +673,19 @@ private:
 
         std::string projectileText = ProjectileFactory::getDisplayName(currentProjectile);
 
-        text("Particle instance Count: " + std::to_string(Particle<float>::particleCount) +
+        text("Particle instance Count: " + formatWithCommas(Particle<float>::particleCount) +
             "    FPS: " + std::to_string(std::lround(customFPS)) +
             "   ms/frame: " + std::to_string(std::lround(smoothedDeltaTime * 1000.0f)), 15, 30);
         text("Aim Mode [M]: " + modeText, 15, 60);
         text("Current Projectile [Scroll]: " + projectileText, 15, 90);
         text(std::string("Display trajectories [T]: ") + (showTrajectories ? "ON" : "OFF"), 15, 120);
         text("Score : " + std::to_string(goal.getScore()) + "/" + neededGoal, 15, 150);
-        text("Confettis per second : " + std::to_string(confettiSpawnAmount) + " [W] + 10 000 [S] -10 000", 15, 180);
+        text("Confettis per second : " + formatWithCommas(confettiSpawnAmount) + " [W] + 10 000 [S] -10 000", 15, 180);
         text("Go to end screen : [G]", 15, 210);
-        text("Active Confettis: " + std::to_string(activeConfetti), 15, 240);
+        text("Active Confettis: " + formatWithCommas(activeConfetti), 15, 240);
         text("Make Confettis uniform: [C]", 15, 270);
         text("VBO enabled [V] " + std::string(useVBO ? "ON" : "OFF"), 15, 300);
+        text("Cull confettis at floor level [V] " + std::string(cullConfettis ? "ON" : "OFF"), 15, 300);
     }
 
 void spawnConfettis(float quantity) {
