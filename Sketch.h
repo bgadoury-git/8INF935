@@ -34,7 +34,7 @@ struct Sketch : public Processing::PApplet {
     std::vector<std::unique_ptr<Particle<float>>> particles;
 
     // Contiguous Swap-and-Pop Pool
-    static constexpr size_t MAX_CONFETTI_POOL = 2'500'000;
+    static constexpr size_t MAX_CONFETTI_POOL = 10'000'000;
     std::array<Confetti, MAX_CONFETTI_POOL> Confettis;
     int activeConfetti{ 0 };
     float confettiSpawnAccumulator{ 0.0f };
@@ -45,13 +45,18 @@ struct Sketch : public Processing::PApplet {
     bool showTrajectories{ false };
     TargetGoal goal{ 120.0f };
     float totalTime{};
-    int confettiSpawnAmount{ 100'000 };
+    int confettiSpawnAmount{ 250'000 };
     float accumulator{ 0 };
     bool solidColor{ true };
+
+    GLuint confettiVBO{ 0 };
+    bool vboInitialized{ false };
+    bool useVBO{ true };
 
     // --- Timing ---
     float customDeltaTime{};
     float customFPS{};
+    float smoothedDeltaTime{ 0.0f };
 
     void settings() override {
         fullScreen(Processing::P3D);
@@ -232,6 +237,9 @@ struct Sketch : public Processing::PApplet {
             if (key == 'c' || key == 'C') {
                 solidColor = !solidColor;
             }
+            if (key == 'v' || key == 'V') {
+                useVBO = !useVBO;
+            }
         }
     }
 
@@ -242,11 +250,23 @@ struct Sketch : public Processing::PApplet {
         std::chrono::duration<float, std::milli> elapsedMs = currentTime - lastTime;
         lastTime = currentTime;
 
+        // Raw delta time for accurate physics and game time accumulation
         customDeltaTime = elapsedMs.count() / 1000.0f;
-        customFPS = (customDeltaTime > 0.0f) ? (1.0f / customDeltaTime) : 0.0f;
 
         if (currentState == GameState::Playing)
             totalTime += customDeltaTime;
+
+        // Exponential Moving Average (EMA) for smooth HUD display
+        // alpha = 0.05f to 0.1f gives a nice, readable balance between stability and responsiveness
+        constexpr float smoothingAlpha = 0.08f;
+        if (smoothedDeltaTime == 0.0f) {
+            smoothedDeltaTime = customDeltaTime;
+        }
+        else {
+            smoothedDeltaTime = smoothingAlpha * customDeltaTime + (1.0f - smoothingAlpha) * smoothedDeltaTime;
+        }
+
+        customFPS = (smoothedDeltaTime > 0.0f) ? (1.0f / smoothedDeltaTime) : 0.0f;
     }
 
 private:
@@ -301,7 +321,7 @@ private:
         // Distribute the 1,000,000 elements across all available CPU cores
         const int count = activeConfetti;
 
-        #pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static)
         for (int i = 0; i < count; ++i) {
             Confettis[i].applyVerletIntegration(timestep);
         }
@@ -327,15 +347,6 @@ private:
     };
 
     void RenderParticles() {
-        for (auto& particle : particles) {
-            particle->draw();
-            if (showTrajectories) {
-                renderParticleTrace(*particle);
-            }
-        }
-
-        if (activeConfetti <= 0) return;
-
         constexpr float tailTime = 0.035f;
         const size_t count = static_cast<size_t>(activeConfetti);
 
@@ -352,70 +363,242 @@ private:
         strokeWeight(2.5f);
         noFill();
 
-        if (solidColor)
+        if (!useVBO)
         {
-            stroke(255, 70, 70, 255);
-            beginShape(Processing::LINES);
-
-            for (size_t i = 0; i < count; ++i) {
-                const auto& c = Confettis[i];
-                const Point3D<float> head = c.getPosition();
-                const Vector3D<float> vel = c.getVelocity();
-
-                vertex(
-                    head.getX() - vel.getX() * tailTime,
-                    -(head.getY() - vel.getY() * tailTime),
-                    head.getZ() - vel.getZ() * tailTime
-                );
-
-                vertex(
-                    head.getX(),
-                    -head.getY(),
-                    head.getZ()
-                );
-            }
-
-            endShape();
-        }
-        else
-        {
-            // SINGLE-PASS BINNING: Scan the array once, sort into 6 color vectors
-            std::vector<float> colorBuffers[6];
-            size_t estimatedPerColor = (count / 6) * 6 + 6;
-            for (int p = 0; p < 6; ++p) {
-                colorBuffers[p].reserve(estimatedPerColor);
-            }
-
-            for (int i = 0; i < count; ++i) {
-                const auto& c = Confettis[i];
-                int p = c.colorIndex;
-                if (p < 0 || p >= 6) p = 0;
-
-                const Point3D<float> head = c.getPosition();
-                const Vector3D<float> vel = c.getVelocity();
-
-                colorBuffers[p].push_back(head.getX() - vel.getX() * tailTime);
-                colorBuffers[p].push_back(-(head.getY() - vel.getY() * tailTime));
-                colorBuffers[p].push_back(head.getZ() - vel.getZ() * tailTime);
-                colorBuffers[p].push_back(head.getX());
-                colorBuffers[p].push_back(-head.getY());
-                colorBuffers[p].push_back(head.getZ());
-            }
-
-            // Draw each color batch
-            for (int p = 0; p < 6; ++p) {
-                if (colorBuffers[p].empty()) continue;
-
-                stroke(palette[p].r, palette[p].g, palette[p].b, 255);
+            if (solidColor)
+            {
+                stroke(255, 70, 70, 255);
                 beginShape(Processing::LINES);
-                for (size_t j = 0; j < colorBuffers[p].size(); j += 6) {
-                    vertex(colorBuffers[p][j + 0], colorBuffers[p][j + 1], colorBuffers[p][j + 2]);
-                    vertex(colorBuffers[p][j + 3], colorBuffers[p][j + 4], colorBuffers[p][j + 5]);
+
+                for (size_t i = 0; i < count; ++i) {
+                    const auto& c = Confettis[i];
+                    const Point3D<float> head = c.getPosition();
+                    const Vector3D<float> vel = c.getVelocity();
+
+                    vertex(
+                        head.getX() - vel.getX() * tailTime,
+                        -(head.getY() - vel.getY() * tailTime),
+                        head.getZ() - vel.getZ() * tailTime
+                    );
+
+                    vertex(
+                        head.getX(),
+                        -head.getY(),
+                        head.getZ()
+                    );
                 }
+
                 endShape();
             }
-        }    
-        noStroke();
+            else
+            {
+                // SINGLE-PASS BINNING: Scan the array once, sort into 6 color vectors
+                std::vector<float> colorBuffers[6];
+                size_t estimatedPerColor = (count / 6) * 6 + 6;
+                for (int p = 0; p < 6; ++p) {
+                    colorBuffers[p].reserve(estimatedPerColor);
+                }
+
+                for (int i = 0; i < count; ++i) {
+                    const auto& c = Confettis[i];
+                    int p = c.colorIndex;
+                    if (p < 0 || p >= 6) p = 0;
+
+                    const Point3D<float> head = c.getPosition();
+                    const Vector3D<float> vel = c.getVelocity();
+
+                    colorBuffers[p].push_back(head.getX() - vel.getX() * tailTime);
+                    colorBuffers[p].push_back(-(head.getY() - vel.getY() * tailTime));
+                    colorBuffers[p].push_back(head.getZ() - vel.getZ() * tailTime);
+                    colorBuffers[p].push_back(head.getX());
+                    colorBuffers[p].push_back(-head.getY());
+                    colorBuffers[p].push_back(head.getZ());
+                }
+
+                // Draw each color batch
+                for (int p = 0; p < 6; ++p) {
+                    if (colorBuffers[p].empty()) continue;
+
+                    stroke(palette[p].r, palette[p].g, palette[p].b, 255);
+                    beginShape(Processing::LINES);
+                    for (size_t j = 0; j < colorBuffers[p].size(); j += 6) {
+                        vertex(colorBuffers[p][j + 0], colorBuffers[p][j + 1], colorBuffers[p][j + 2]);
+                        vertex(colorBuffers[p][j + 3], colorBuffers[p][j + 4], colorBuffers[p][j + 5]);
+                    }
+                    endShape();
+                }
+            }
+            noStroke();
+        }
+        else {
+            if (solidColor)
+            {
+                auto* applet = Processing::PApplet::g_papplet;
+                if (applet) {
+                    // CRITICAL: Force Processing to flush its internal shader color/stroke uniforms 
+                    // back to normal, overwriting whatever tint the Bullet left behind.
+                    applet->stroke(255, 70, 70, 255);
+                    applet->noFill();
+                }
+
+                // 1. Initialize VBO once (Position: 3 floats, Color: 4 floats = 7 floats per vertex)
+                if (!vboInitialized) {
+                    glGenBuffers(1, &confettiVBO);
+                    glBindBuffer(GL_ARRAY_BUFFER, confettiVBO);
+                    glBufferData(GL_ARRAY_BUFFER, MAX_CONFETTI_POOL * 14 * sizeof(float), nullptr, GL_STREAM_DRAW);
+                    vboInitialized = true;
+                }
+
+                glBindBuffer(GL_ARRAY_BUFFER, confettiVBO);
+
+                // 2. Map buffer range for zero-copy parallel writing
+                float* gpuPtr = (float*)glMapBufferRange(
+                    GL_ARRAY_BUFFER,
+                    0,
+                    count * 14 * sizeof(float),
+                    GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT
+                );
+
+                if (gpuPtr != nullptr) {
+                    constexpr float r = 255.0f / 255.0f;
+                    constexpr float g = 70.0f / 255.0f;
+                    constexpr float b = 70.0f / 255.0f;
+                    constexpr float a = 1.0f;
+
+#pragma omp parallel for schedule(static)
+                    for (int i = 0; i < count; ++i) {
+                        const auto& c = Confettis[i];
+                        const Point3D<float> head = c.getPosition();
+                        const Vector3D<float> vel = c.getVelocity();
+
+                        size_t baseIdx = i * 14;
+
+                        // --- Vertex 1 (Tail) ---
+                        gpuPtr[baseIdx + 0] = head.getX() - vel.getX() * tailTime;
+                        gpuPtr[baseIdx + 1] = -(head.getY() - vel.getY() * tailTime);
+                        gpuPtr[baseIdx + 2] = head.getZ() - vel.getZ() * tailTime;
+                        gpuPtr[baseIdx + 3] = r;
+                        gpuPtr[baseIdx + 4] = g;
+                        gpuPtr[baseIdx + 5] = b;
+                        gpuPtr[baseIdx + 6] = a;
+
+                        // --- Vertex 2 (Head) ---
+                        gpuPtr[baseIdx + 7] = head.getX();
+                        gpuPtr[baseIdx + 8] = -head.getY();
+                        gpuPtr[baseIdx + 9] = head.getZ();
+                        gpuPtr[baseIdx + 10] = r;
+                        gpuPtr[baseIdx + 11] = g;
+                        gpuPtr[baseIdx + 12] = b;
+                        gpuPtr[baseIdx + 13] = a;
+                    }
+
+                    glUnmapBuffer(GL_ARRAY_BUFFER);
+                }
+
+                // 3. SECURE STATE GUARD
+                glDisableClientState(GL_NORMAL_ARRAY);
+                glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+
+                glEnableClientState(GL_VERTEX_ARRAY);
+                glEnableClientState(GL_COLOR_ARRAY);
+
+                glVertexPointer(3, GL_FLOAT, 7 * sizeof(float), (void*)0);
+                glColorPointer(4, GL_FLOAT, 7 * sizeof(float), (void*)(3 * sizeof(float)));
+
+                glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(count) * 2);
+
+                glDisableClientState(GL_VERTEX_ARRAY);
+                glDisableClientState(GL_COLOR_ARRAY);
+                glBindBuffer(GL_ARRAY_BUFFER, 0);
+            }
+            else // Multi-color mode
+            {
+                if (!vboInitialized) {
+                    glGenBuffers(1, &confettiVBO);
+                    glBindBuffer(GL_ARRAY_BUFFER, confettiVBO);
+                    glBufferData(GL_ARRAY_BUFFER, MAX_CONFETTI_POOL * 14 * sizeof(float), nullptr, GL_STREAM_DRAW);
+                    vboInitialized = true;
+                }
+
+                glBindBuffer(GL_ARRAY_BUFFER, confettiVBO);
+
+                // 1. Map the buffer for writing
+                float* gpuPtr = (float*)glMapBufferRange(
+                    GL_ARRAY_BUFFER,
+                    0,
+                    count * 14 * sizeof(float),
+                    GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT
+                );
+
+                if (gpuPtr != nullptr) {
+                    // Palette converted to normalized floats (0.0 to 1.0)
+                    constexpr float paletteRGB[6][3] = {
+                        {255.0f / 255.0f,  70.0f / 255.0f,  70.0f / 255.0f},  // Red
+                        { 70.0f / 255.0f, 255.0f / 255.0f, 120.0f / 255.0f},  // Green
+                        { 70.0f / 255.0f, 160.0f / 255.0f, 255.0f / 255.0f},  // Blue
+                        {255.0f / 255.0f, 220.0f / 255.0f,  50.0f / 255.0f},  // Yellow
+                        {255.0f / 255.0f, 120.0f / 255.0f, 220.0f / 255.0f},  // Magenta
+                        { 50.0f / 255.0f, 255.0f / 255.0f, 255.0f / 255.0f}   // Cyan
+                    };
+
+                    // 2. Parallel write straight into the VBO block
+                    #pragma omp parallel for schedule(static)
+                    for (int i = 0; i < count; ++i) {
+                        const auto& c = Confettis[i];
+                        int p = c.colorIndex;
+                        if (p < 0 || p >= 6) p = 0;
+
+                        const Point3D<float> head = c.getPosition();
+                        const Vector3D<float> vel = c.getVelocity();
+
+                        size_t baseIdx = i * 14;
+
+                        // --- Vertex 1 (Tail) ---
+                        gpuPtr[baseIdx + 0] = head.getX() - vel.getX() * tailTime;
+                        gpuPtr[baseIdx + 1] = -(head.getY() - vel.getY() * tailTime);
+                        gpuPtr[baseIdx + 2] = head.getZ() - vel.getZ() * tailTime;
+                        gpuPtr[baseIdx + 3] = paletteRGB[p][0];
+                        gpuPtr[baseIdx + 4] = paletteRGB[p][1];
+                        gpuPtr[baseIdx + 5] = paletteRGB[p][2];
+                        gpuPtr[baseIdx + 6] = 1.0f; // Alpha
+
+                        // --- Vertex 2 (Head) ---
+                        gpuPtr[baseIdx + 7] = head.getX();
+                        gpuPtr[baseIdx + 8] = -head.getY();
+                        gpuPtr[baseIdx + 9] = head.getZ();
+                        gpuPtr[baseIdx + 10] = paletteRGB[p][0];
+                        gpuPtr[baseIdx + 11] = paletteRGB[p][1];
+                        gpuPtr[baseIdx + 12] = paletteRGB[p][2];
+                        gpuPtr[baseIdx + 13] = 1.0f; // Alpha
+                    }
+
+                    glUnmapBuffer(GL_ARRAY_BUFFER);
+                }
+
+                // 3. Draw everything in a single VBO state pass
+                glDisableClientState(GL_NORMAL_ARRAY);
+                glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+
+                glEnableClientState(GL_VERTEX_ARRAY);
+                glEnableClientState(GL_COLOR_ARRAY);
+
+                glVertexPointer(3, GL_FLOAT, 7 * sizeof(float), (void*)0);
+                glColorPointer(4, GL_FLOAT, 7 * sizeof(float), (void*)(3 * sizeof(float)));
+
+                glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(count) * 2);
+
+                glDisableClientState(GL_VERTEX_ARRAY);
+                glDisableClientState(GL_COLOR_ARRAY);
+                glBindBuffer(GL_ARRAY_BUFFER, 0);
+            }
+        }
+        
+        for (auto& particle : particles) {
+            particle->draw();
+            if (showTrajectories) {
+                renderParticleTrace(*particle);
+            }
+        }
     }
 
     void renderParticleTrace(Particle<float>& particle) {
@@ -468,7 +651,7 @@ private:
 
         text("Particle instance Count: " + std::to_string(Particle<float>::particleCount) +
             "    FPS: " + std::to_string(std::lround(customFPS)) +
-            "   ms/frame: " + std::to_string(std::lround(customDeltaTime * 1000.0f)), 15, 30);
+            "   ms/frame: " + std::to_string(std::lround(smoothedDeltaTime * 1000.0f)), 15, 30);
         text("Aim Mode [M]: " + modeText, 15, 60);
         text("Current Projectile [Scroll]: " + projectileText, 15, 90);
         text(std::string("Display trajectories [T]: ") + (showTrajectories ? "ON" : "OFF"), 15, 120);
@@ -477,6 +660,7 @@ private:
         text("Go to end screen : [G]", 15, 210);
         text("Active Confettis: " + std::to_string(activeConfetti), 15, 240);
         text("Make Confettis uniform: [C]", 15, 270);
+        text("VBO enabled [V] " + std::string(useVBO ? "ON" : "OFF"), 15, 300);
     }
 
     void spawnConfettis(float quantity) {
