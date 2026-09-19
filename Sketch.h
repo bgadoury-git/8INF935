@@ -379,31 +379,39 @@ private:
         }
         else
         {
-            // 6 draw batches total
+            // SINGLE-PASS BINNING: Scan the array once, sort into 6 color vectors
+            std::vector<float> colorBuffers[6];
+            size_t estimatedPerColor = (count / 6) * 6 + 6;
             for (int p = 0; p < 6; ++p) {
+                colorBuffers[p].reserve(estimatedPerColor);
+            }
+
+            for (int i = 0; i < count; ++i) {
+                const auto& c = Confettis[i];
+                int p = c.colorIndex;
+                if (p < 0 || p >= 6) p = 0;
+
+                const Point3D<float> head = c.getPosition();
+                const Vector3D<float> vel = c.getVelocity();
+
+                colorBuffers[p].push_back(head.getX() - vel.getX() * tailTime);
+                colorBuffers[p].push_back(-(head.getY() - vel.getY() * tailTime));
+                colorBuffers[p].push_back(head.getZ() - vel.getZ() * tailTime);
+                colorBuffers[p].push_back(head.getX());
+                colorBuffers[p].push_back(-head.getY());
+                colorBuffers[p].push_back(head.getZ());
+            }
+
+            // Draw each color batch
+            for (int p = 0; p < 6; ++p) {
+                if (colorBuffers[p].empty()) continue;
+
                 stroke(palette[p].r, palette[p].g, palette[p].b, 255);
                 beginShape(Processing::LINES);
-
-                for (size_t i = 0; i < count; ++i) {
-                    if (Confettis[i].colorIndex != p) continue;
-
-                    const auto& c = Confettis[i];
-                    const Point3D<float> head = c.getPosition();
-                    const Vector3D<float> vel = c.getVelocity();
-
-                    vertex(
-                        head.getX() - vel.getX() * tailTime,
-                        -(head.getY() - vel.getY() * tailTime),
-                        head.getZ() - vel.getZ() * tailTime
-                    );
-
-                    vertex(
-                        head.getX(),
-                        -head.getY(),
-                        head.getZ()
-                    );
+                for (size_t j = 0; j < colorBuffers[p].size(); j += 6) {
+                    vertex(colorBuffers[p][j + 0], colorBuffers[p][j + 1], colorBuffers[p][j + 2]);
+                    vertex(colorBuffers[p][j + 3], colorBuffers[p][j + 4], colorBuffers[p][j + 5]);
                 }
-
                 endShape();
             }
         }    

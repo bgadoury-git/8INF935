@@ -10,7 +10,7 @@ public:
 
     bool isActive{ false };
 
-    uint8_t colorIndex{ 0 };
+    int colorIndex{ 0 };
 
     Confetti(const Point3D<float>& pos = {}, const Vector3D<float>& vel = {})
         : Particle(pos, vel, {}, 0.1f, 0.999f, defaultGravityState){
@@ -21,7 +21,7 @@ public:
     void initColor() {
         static std::mt19937 rng(std::random_device{}());
         static std::uniform_int_distribution<int> dist(0, 5);
-        colorIndex = static_cast<uint8_t>(dist(rng));
+        colorIndex = dist(rng);
     }
 
 
