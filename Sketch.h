@@ -18,6 +18,7 @@
 #include <array>
 #include <algorithm>
 #include <omp.h>
+#include <windows.h>
 
 enum class GameState {
     Menu,
@@ -45,7 +46,7 @@ struct Sketch : public Processing::PApplet {
     bool showTrajectories{ false };
     TargetGoal goal{ 120.0f };
     float totalTime{};
-    int confettiSpawnAmount{ 250'000 };
+    int confettiSpawnAmount{ 0'000 };
     float accumulator{ 0 };
     bool solidColor{ true };
 
@@ -60,11 +61,17 @@ struct Sketch : public Processing::PApplet {
 
     void settings() override {
         fullScreen(Processing::P3D);
-        frameRate(240);
+        frameRate(10000);
     }
 
     void setup() override {
-        std::cout << "Max pool capacity: " << Confettis.size() << std::endl;
+        // Disable VSync to completely uncap the frame rate from the monitor refresh rate
+            typedef BOOL(WINAPI* PFNWGLSWAPINTERVALEXTPROC)(int);
+        PFNWGLSWAPINTERVALEXTPROC wglSwapIntervalEXT =
+            (PFNWGLSWAPINTERVALEXTPROC)wglGetProcAddress("wglSwapIntervalEXT");
+        if (wglSwapIntervalEXT) {
+            wglSwapIntervalEXT(0); // 0 = Disable VSync, 1 = Enable VSync
+        }
     }
 
     void draw() override {
@@ -231,9 +238,9 @@ struct Sketch : public Processing::PApplet {
                 currentState = GameState::GameOver;
             }
             if (key == 'w' || key == 'W')
-                confettiSpawnAmount += 100;
+                confettiSpawnAmount += 10000;
             if ((key == 's' || key == 'S') && confettiSpawnAmount > 0)
-                confettiSpawnAmount -= 100;
+                confettiSpawnAmount -= 10000;
             if (key == 'c' || key == 'C') {
                 solidColor = !solidColor;
             }
@@ -321,25 +328,25 @@ private:
         // Distribute the 1,000,000 elements across all available CPU cores
         const int count = activeConfetti;
 
-#pragma omp parallel for schedule(static)
+        #pragma omp parallel for schedule(static)
         for (int i = 0; i < count; ++i) {
             Confettis[i].applyVerletIntegration(timestep);
         }
 
-        // 3. Optional: Sequential Culling pass
+        //Optional: Sequential Culling pass
         // If you re-enable goal hit or arena boundary culling, run it here sequentially
-        // so swap-and-pop (killConfetti) does not cause thread collisions:
-        /*
+        //so swap-and-pop (killConfetti) does not cause thread collisions:
+        
         for (size_t i = 0; i < static_cast<size_t>(activeConfetti);) {
             const Point3D<float>& pos = Confettis[i].getPosition();
-            if (goal.checkHit(pos) || Arena::isOutOfBounds(pos)) {
+            if (pos.getY() < -floorY) {
                 killConfetti(i);
             }
             else {
                 ++i;
             }
         }
-        */
+        
     }
 
     struct RGBColor {
@@ -656,14 +663,14 @@ private:
         text("Current Projectile [Scroll]: " + projectileText, 15, 90);
         text(std::string("Display trajectories [T]: ") + (showTrajectories ? "ON" : "OFF"), 15, 120);
         text("Score : " + std::to_string(goal.getScore()) + "/" + neededGoal, 15, 150);
-        text("Confettis per second : " + std::to_string(confettiSpawnAmount) + " [W] + 100 [S] -100", 15, 180);
+        text("Confettis per second : " + std::to_string(confettiSpawnAmount) + " [W] + 10 000 [S] -10 000", 15, 180);
         text("Go to end screen : [G]", 15, 210);
         text("Active Confettis: " + std::to_string(activeConfetti), 15, 240);
         text("Make Confettis uniform: [C]", 15, 270);
         text("VBO enabled [V] " + std::string(useVBO ? "ON" : "OFF"), 15, 300);
     }
 
-    void spawnConfettis(float quantity) {
+void spawnConfettis(float quantity) {
         confettiSpawnAccumulator += quantity;
         int toSpawn = static_cast<int>(confettiSpawnAccumulator);
         confettiSpawnAccumulator -= toSpawn;
@@ -672,41 +679,32 @@ private:
 
         static std::mt19937 rng(std::random_device{}());
 
-        constexpr float maxSpreadAngle = 30.0f * (std::numbers::pi_v<float> / 180.0f);
-        const float cosMax = std::cos(maxSpreadAngle);
+        // Tightly clustered horizontal spread (X and Z)
+        std::uniform_real_distribution<float> distHorizontal(-75.0f, 75.0f);
 
-        std::uniform_real_distribution<float> distCosTheta(cosMax, 1.0f);
-        std::uniform_real_distribution<float> distPhi(0.0f, 2.0f * std::numbers::pi_v<float>);
-        std::uniform_real_distribution<float> distSpeed(250.0f, 400.0f);
+        // Strong, high-speed upward velocity (Y)
+        std::uniform_real_distribution<float> distUpward(200.0f, 250.0f);
 
         for (int i = 0; i < toSpawn; ++i) {
-            float cosTheta = distCosTheta(rng);
-            float sinTheta = std::sqrt(std::max(0.0f, 1.0f - cosTheta * cosTheta));
-            float phi = distPhi(rng);
-            float speed = distSpeed(rng);
-
             Vector3D<float> velocity(
-                speed * sinTheta * std::cos(phi),
-                speed * cosTheta,
-                speed * sinTheta * std::sin(phi)
+                distHorizontal(rng), // Tight X spread
+                distUpward(rng),     // Fast upward thrust
+                distHorizontal(rng)  // Tight Z spread
             );
 
             size_t targetIndex = 0;
 
             if (static_cast<size_t>(activeConfetti) < MAX_CONFETTI_POOL) {
-                // Still growing the active pool
                 targetIndex = static_cast<size_t>(activeConfetti);
                 ++activeConfetti;
             }
             else {
-                // Pool is saturated: overwrite using the rotating cursor
                 targetIndex = confettiRecycleCursor;
                 confettiRecycleCursor = (confettiRecycleCursor + 1) % MAX_CONFETTI_POOL;
             }
 
             Confettis[targetIndex].setPosition(Point3D<float>(0.0f, -floorY, 600.0f));
             Confettis[targetIndex].setVelocity(velocity);
-            //Confettis[targetIndex].initColor();
         }
     }
 };
