@@ -46,14 +46,14 @@ struct Sketch : public Processing::PApplet {
     bool showTrajectories{ false };
     TargetGoal goal{ 120.0f };
     float totalTime{};
-    int confettiSpawnAmount{ 0'000 };
+    int confettiSpawnAmount{ 10'000 };
     float accumulator{ 0 };
     bool solidColor{ true };
 
     GLuint confettiVBO{ 0 };
     bool vboInitialized{ false };
     bool useVBO{ true };
-    bool cullConfettis{ false };
+    bool cullConfettis{ true };
 
     // --- Timing ---
     float customDeltaTime{};
@@ -248,6 +248,9 @@ struct Sketch : public Processing::PApplet {
             }
             if (key == 'v' || key == 'V') {
                 useVBO = !useVBO;
+            }
+            if (key == 'b' || key == 'B') {
+                cullConfettis = !cullConfettis;
             }
         }
     }
