@@ -15,6 +15,7 @@
 #include <format>
 #include <random>
 #include <numbers>
+#include <array>
 
 enum class GameState {
     Menu,
@@ -29,6 +30,11 @@ struct Sketch : public Processing::PApplet {
     // --- Gameplay State ---
     const int neededGoal{ 10 };
     std::vector<std::unique_ptr<Particle<float>>> particles;
+    static constexpr size_t MAX_CONFETTI_POOL = 1000000;
+    std::array<Confetti, MAX_CONFETTI_POOL> Confettis;
+    size_t confettiPoolCursor{ 0 };
+    float confettiSpawnAccumulator{ 0.0f };
+
     AimMode currentAimMode{ AimMode::TurretSpherical };
     SelectedProjectile currentProjectile{ SelectedProjectile::Bullet };
     bool showTrajectories{ false };
@@ -36,18 +42,20 @@ struct Sketch : public Processing::PApplet {
     float totalTime{};
     int confettiCount{ 1000 };
     float accumulator{ 0 };
+    int activeConfetti{ 0 };
 
     // --- Timing ---
     float customDeltaTime{};
     float customFPS{};
 
     void settings() override {
-        //size(ScreenWidth, ScreenHeight, Processing::P3D);
         fullScreen(Processing::P3D);
         frameRate(240);
     }
 
-    void setup() override {}
+    void setup() override {
+        std::cout << Confettis.size() << std::endl;
+    }
 
     void draw() override {
         actualiseDeltaTime();
@@ -71,9 +79,19 @@ struct Sketch : public Processing::PApplet {
 
     void resetGame() {
         particles.clear();
+        clearConfetti();
         goal.resetValues();
         totalTime = 0;
         currentState = GameState::Playing;
+    }
+
+    void clearConfetti() {
+        for (auto& confetti : Confettis) {
+            confetti.isActive = false;
+        }
+        activeConfetti = 0;
+        confettiPoolCursor = 0;
+        confettiSpawnAccumulator = 0.0f;
     }
 
     // ==========================================
@@ -114,7 +132,7 @@ struct Sketch : public Processing::PApplet {
         accumulator += frameTime;
 
         while (accumulator >= FIXED_TIMESTEP) {
-            updateParticles(FIXED_TIMESTEP); // Pass fixed step, not variable time!
+            updateParticles(FIXED_TIMESTEP);
             accumulator -= FIXED_TIMESTEP;
         }
 
@@ -122,7 +140,7 @@ struct Sketch : public Processing::PApplet {
         renderAimPreview();
         renderHUD();
 
-        // Game over trigger check: out of shots and no active projectiles in flight
+        // Game over trigger check
         if (goal.getScore() == neededGoal) {
             particles.clear();
             currentState = GameState::GameOver;
@@ -202,11 +220,9 @@ struct Sketch : public Processing::PApplet {
             if (key == 't' || key == 'T') {
                 showTrajectories = !showTrajectories;
             }
-            // Direct force to Game Over for testing
             if (key == 'g' || key == 'G') {
                 currentState = GameState::GameOver;
             }
-
             if (key == 'w' || key == 'W')
                 confettiCount += 100;
             if ((key == 's' || key == 'S') && confettiCount > 0)
@@ -252,7 +268,8 @@ private:
         );
     }
 
-    void updateParticles(float timestep){
+    void updateParticles(float timestep) {
+        // Dynamic projectile list integration & removal
         for (auto it = particles.begin(); it != particles.end();) {
             auto& particle = *it;
             particle->applyVerletIntegration(timestep);
@@ -266,19 +283,41 @@ private:
                 ++it;
             }
         }
+
+        // Confetti physics integration & deactivation with early loop exit
+        int checkedCount = 0;
+        for (size_t i = 0; i < Confettis.size() && checkedCount < activeConfetti; ++i) {
+            if (!Confettis[i].isActive) continue;
+
+            ++checkedCount;
+            Confettis[i].applyVerletIntegration(timestep);
+
+            /*
+            const Point3D<float>& pos = Confettis[i].getPosition();
+            if (goal.checkHit(pos) || Arena::isOutOfBounds(pos)) {
+                Confettis[i].isActive = false;
+                --activeConfetti;
+            }
+            */
+        }
     }
 
     void RenderParticles() {
-        for (auto it = particles.begin(); it != particles.end();) {
-            auto& particle = *it;
-
+        for (auto& particle : particles) {
             particle->draw();
 
             if (showTrajectories) {
                 renderParticleTrace(*particle);
             }
+        }
 
-            ++it;
+        // Render confetti with early loop exit
+        int drawnCount = 0;
+        for (size_t i = 0; i < Confettis.size() && drawnCount < activeConfetti; ++i) {
+            if (Confettis[i].isActive) {
+                Confettis[i].draw();
+                ++drawnCount;
+            }
         }
     }
 
@@ -337,40 +376,54 @@ private:
         text("Current Projectile [Scroll]: " + projectileText, 15, 90);
         text(std::string("Display trajectories [T]: ") + (showTrajectories ? "ON" : "OFF"), 15, 120);
         text("Score : " + std::to_string(goal.getScore()) + "/" + neededGoal, 15, 150);
-        text("Confettis per seconds : " + std::to_string(confettiCount) + " [W] + 100 [S] -100", 15, 180);
-        text("Go to end scren : [G]", 15, 210);
+        text("Confettis per second : " + std::to_string(confettiCount) + " [W] + 100 [S] -100", 15, 180);
+        text("Go to end screen : [G]", 15, 210);
+        text("Active Confettis: " + std::to_string(activeConfetti), 15, 240);
     }
 
     void spawnConfettis(float quantity) {
-        // Random engine
+        confettiSpawnAccumulator += quantity;
+        int toSpawn = static_cast<int>(confettiSpawnAccumulator);
+        confettiSpawnAccumulator -= toSpawn;
+
+        if (toSpawn <= 0) return;
+
         static std::mt19937 rng(std::random_device{}());
 
-        // Cone parameters
-        const float maxSpreadAngle = 30.0f * (std::numbers::pi_v<float> / 180.0f); // 30-degree half-angle cone
+        // 30-degree half-angle cone
+        constexpr float maxSpreadAngle = 30.0f * (std::numbers::pi_v<float> / 180.0f);
         const float cosMax = std::cos(maxSpreadAngle);
 
-        // Uniform distributions
-        std::uniform_real_distribution<float> distCosTheta(cosMax, 1.0f); // Uniform areal spread
+        std::uniform_real_distribution<float> distCosTheta(cosMax, 1.0f);
         std::uniform_real_distribution<float> distPhi(0.0f, 2.0f * std::numbers::pi_v<float>);
-        std::uniform_real_distribution<float> distSpeed(250.0f, 400.0f); // Variable launch speeds
+        std::uniform_real_distribution<float> distSpeed(250.0f, 400.0f);
 
-        for (int i = 0; i < quantity; ++i)
-        {
+        const size_t poolSize = Confettis.size();
+
+        for (int i = 0; i < toSpawn; ++i) {
             float cosTheta = distCosTheta(rng);
-            float sinTheta = std::sqrt(1.0f - cosTheta * cosTheta);
+            float sinTheta = std::sqrt(std::max(0.0f, 1.0f - cosTheta * cosTheta));
             float phi = distPhi(rng);
             float speed = distSpeed(rng);
 
-            // Directional vector pointed up (+Y) with spread along X and Z
             Vector3D<float> velocity(
-                speed * sinTheta * std::cos(phi), // X (lateral)
-                speed * cosTheta,                 // Y (upward)
-                speed * sinTheta * std::sin(phi)  // Z (depth)
+                speed * sinTheta * std::cos(phi),
+                speed * cosTheta,
+                speed * sinTheta * std::sin(phi)
             );
 
-            particles.push_back(
-                ProjectileFactory::create(SelectedProjectile::Confetti, Point3D<float>(0.0f, -floorY, 600.0f), velocity)
-            );
+            // Fast rotating cursor lookup
+            for (size_t checked = 0; checked < poolSize; ++checked) {
+                size_t candidateIdx = (confettiPoolCursor + checked) % poolSize;
+                if (!Confettis[candidateIdx].isActive) {
+                    Confettis[candidateIdx].setPosition(Point3D<float>(0.0f, -floorY, 600.0f));
+                    Confettis[candidateIdx].setVelocity(velocity);
+                    Confettis[candidateIdx].isActive = true;
+                    ++activeConfetti;
+                    confettiPoolCursor = (candidateIdx + 1) % poolSize;
+                    break;
+                }
+            }
         }
     }
 };

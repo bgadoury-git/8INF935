@@ -77,7 +77,9 @@ public:
     }
 
     Point3D<T> getPosition() const { return m_position; }
+    void setPosition(Point3D<T> newPosition) { m_position = newPosition; }
     Vector3D<T> getVelocity() const { return m_velocity; }
+    void setVelocity(Vector3D<T> newVelocity) { m_velocity = newVelocity; }
     Vector3D<T> getAcceleration() const { return m_acceleration; }
     Vector3D<T> getTotalAcceleration() const { return computeAcceleration(); }
     T getMass() const { return m_inverseMass > static_cast<T>(0) ? static_cast<T>(1) / m_inverseMass : static_cast<T>(0); }

@@ -8,6 +8,8 @@ public:
     inline static const float baseSpeed{ 50.0f };
     inline static const bool defaultGravityState{ true };
 
+    bool isActive{ false };
+
     Confetti(const Point3D<float>& pos = {}, const Vector3D<float>& vel = {})
         : Particle(pos, vel, {}, 0.1f, 0.999f, defaultGravityState){
     }
