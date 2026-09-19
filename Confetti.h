@@ -10,9 +10,20 @@ public:
 
     bool isActive{ false };
 
+    uint8_t colorIndex{ 0 };
+
     Confetti(const Point3D<float>& pos = {}, const Vector3D<float>& vel = {})
         : Particle(pos, vel, {}, 0.1f, 0.999f, defaultGravityState){
+
+        initColor();
     }
+
+    void initColor() {
+        static std::mt19937 rng(std::random_device{}());
+        static std::uniform_int_distribution<int> dist(0, 5);
+        colorIndex = static_cast<uint8_t>(dist(rng));
+    }
+
 
     void draw() const override {
         auto* applet = Processing::PApplet::g_papplet;
@@ -33,11 +44,11 @@ public:
         static std::mt19937 rng(std::random_device{}());
         static std::uniform_int_distribution<int> dist(0, 255);
 
-        int r = dist(rng);
-        int g = dist(rng);
-        int b = dist(rng);
+        int _r = dist(rng);
+        int _g = dist(rng);
+        int _b = dist(rng);
 
-        applet->stroke(r, g, b, 255);
+        applet->stroke(_r, _g, _b, 255);
         applet->strokeWeight(2.5f);
         applet->line(
             tail.getX(), -tail.getY(), tail.getZ(),

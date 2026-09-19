@@ -33,18 +33,20 @@ struct Sketch : public Processing::PApplet {
     std::vector<std::unique_ptr<Particle<float>>> particles;
 
     // Contiguous Swap-and-Pop Pool
-    static constexpr size_t MAX_CONFETTI_POOL = 10000;
+    static constexpr size_t MAX_CONFETTI_POOL = 1'000'000;
     std::array<Confetti, MAX_CONFETTI_POOL> Confettis;
     int activeConfetti{ 0 };
     float confettiSpawnAccumulator{ 0.0f };
+    size_t confettiRecycleCursor{ 0 };
 
     AimMode currentAimMode{ AimMode::TurretSpherical };
     SelectedProjectile currentProjectile{ SelectedProjectile::Bullet };
     bool showTrajectories{ false };
     TargetGoal goal{ 120.0f };
     float totalTime{};
-    int confettiCount{ 100 };
+    int confettiSpawnAmount{ 50'000 };
     float accumulator{ 0 };
+    bool solidColor{ true };
 
     // --- Timing ---
     float customDeltaTime{};
@@ -90,6 +92,7 @@ struct Sketch : public Processing::PApplet {
     void clearConfetti() {
         activeConfetti = 0;
         confettiSpawnAccumulator = 0.0f;
+        confettiRecycleCursor = 0;
     }
 
     // ==========================================
@@ -122,7 +125,7 @@ struct Sketch : public Processing::PApplet {
         Arena::draw(*this);
         goal.draw(*this);
 
-        spawnConfettis(confettiCount * customDeltaTime);
+        spawnConfettis(confettiSpawnAmount * customDeltaTime);
 
         // Clamp frame time to handle hitches/breakpoints
         float frameTime = std::min(customDeltaTime, MAX_FRAME_TIME);
@@ -222,9 +225,12 @@ struct Sketch : public Processing::PApplet {
                 currentState = GameState::GameOver;
             }
             if (key == 'w' || key == 'W')
-                confettiCount += 100;
-            if ((key == 's' || key == 'S') && confettiCount > 0)
-                confettiCount -= 100;
+                confettiSpawnAmount += 100;
+            if ((key == 's' || key == 'S') && confettiSpawnAmount > 0)
+                confettiSpawnAmount -= 100;
+            if (key == 'c' || key == 'C') {
+                solidColor = !solidColor;
+            }
         }
     }
 
@@ -292,33 +298,108 @@ private:
 
         // Confetti: Strictly packed iteration with swap-and-pop removal
         for (size_t i = 0; i < static_cast<size_t>(activeConfetti);) {
-            Confettis[i].applyVerletIntegration(timestep);
+            #pragma omp parallel for schedule(static)
+            for (int i = 0; i < activeConfetti; ++i) {
+                Confettis[i].applyVerletIntegration(timestep);
+            }
             
-            const Point3D<float>& pos = Confettis[i].getPosition();
-            if (goal.checkHit(pos) || Arena::isOutOfBounds(pos)) {
-                killConfetti(i);
+            //const Point3D<float>& pos = Confettis[i].getPosition();
+            //if (goal.checkHit(pos) || Arena::isOutOfBounds(pos)) {
+            //    killConfetti(i);
                 // Do NOT increment i: the swapped particle at index i must be processed next
-            }
-            else {
+            // }
+            //else {
                 ++i;
-            }
-            
+           // }
         }
     }
+
+    struct RGBColor {
+        int r, g, b;
+    };
 
     void RenderParticles() {
         for (auto& particle : particles) {
             particle->draw();
-
             if (showTrajectories) {
                 renderParticleTrace(*particle);
             }
         }
 
-        // Tightly packed linear memory stream to GPU
-        for (size_t i = 0; i < static_cast<size_t>(activeConfetti); ++i) {
-            Confettis[i].draw();
+        if (activeConfetti <= 0) return;
+
+        constexpr float tailTime = 0.035f;
+        const size_t count = static_cast<size_t>(activeConfetti);
+
+        // 6 distinct palette colors defined using plain integers
+        constexpr RGBColor palette[6] = {
+            {255, 70, 70},   // Red
+            {70, 255, 120},  // Green
+            {70, 160, 255},  // Blue
+            {255, 220, 50},  // Yellow
+            {255, 120, 220}, // Magenta
+            {50, 255, 255}   // Cyan
+        };
+
+        strokeWeight(2.5f);
+        noFill();
+
+        if (solidColor)
+        {
+            stroke(255, 70, 70, 255);
+            beginShape(Processing::LINES);
+
+            for (size_t i = 0; i < count; ++i) {
+                const auto& c = Confettis[i];
+                const Point3D<float> head = c.getPosition();
+                const Vector3D<float> vel = c.getVelocity();
+
+                vertex(
+                    head.getX() - vel.getX() * tailTime,
+                    -(head.getY() - vel.getY() * tailTime),
+                    head.getZ() - vel.getZ() * tailTime
+                );
+
+                vertex(
+                    head.getX(),
+                    -head.getY(),
+                    head.getZ()
+                );
+            }
+
+            endShape();
         }
+        else
+        {
+            // 6 draw batches total
+            for (int p = 0; p < 6; ++p) {
+                stroke(palette[p].r, palette[p].g, palette[p].b, 255);
+                beginShape(Processing::LINES);
+
+                for (size_t i = 0; i < count; ++i) {
+                    if (Confettis[i].colorIndex != p) continue;
+
+                    const auto& c = Confettis[i];
+                    const Point3D<float> head = c.getPosition();
+                    const Vector3D<float> vel = c.getVelocity();
+
+                    vertex(
+                        head.getX() - vel.getX() * tailTime,
+                        -(head.getY() - vel.getY() * tailTime),
+                        head.getZ() - vel.getZ() * tailTime
+                    );
+
+                    vertex(
+                        head.getX(),
+                        -head.getY(),
+                        head.getZ()
+                    );
+                }
+
+                endShape();
+            }
+        }    
+        noStroke();
     }
 
     void renderParticleTrace(Particle<float>& particle) {
@@ -376,9 +457,10 @@ private:
         text("Current Projectile [Scroll]: " + projectileText, 15, 90);
         text(std::string("Display trajectories [T]: ") + (showTrajectories ? "ON" : "OFF"), 15, 120);
         text("Score : " + std::to_string(goal.getScore()) + "/" + neededGoal, 15, 150);
-        text("Confettis per second : " + std::to_string(confettiCount) + " [W] + 100 [S] -100", 15, 180);
+        text("Confettis per second : " + std::to_string(confettiSpawnAmount) + " [W] + 100 [S] -100", 15, 180);
         text("Go to end screen : [G]", 15, 210);
         text("Active Confettis: " + std::to_string(activeConfetti), 15, 240);
+        text("Make Confettis uniform: [C]", 15, 270);
     }
 
     void spawnConfettis(float quantity) {
@@ -390,7 +472,6 @@ private:
 
         static std::mt19937 rng(std::random_device{}());
 
-        // 30-degree half-angle cone
         constexpr float maxSpreadAngle = 30.0f * (std::numbers::pi_v<float> / 180.0f);
         const float cosMax = std::cos(maxSpreadAngle);
 
@@ -410,17 +491,22 @@ private:
                 speed * sinTheta * std::sin(phi)
             );
 
-            // O(1) direct insertion into active dense partition
+            size_t targetIndex = 0;
+
             if (static_cast<size_t>(activeConfetti) < MAX_CONFETTI_POOL) {
-                Confettis[activeConfetti].setPosition(Point3D<float>(0.0f, -floorY, 600.0f));
-                Confettis[activeConfetti].setVelocity(velocity);
+                // Still growing the active pool
+                targetIndex = static_cast<size_t>(activeConfetti);
                 ++activeConfetti;
             }
             else {
-                // Hard-cap ceiling reached: recycle slot 0 (oldest active survivor)
-                Confettis[0].setPosition(Point3D<float>(0.0f, -floorY, 600.0f));
-                Confettis[0].setVelocity(velocity);
+                // Pool is saturated: overwrite using the rotating cursor
+                targetIndex = confettiRecycleCursor;
+                confettiRecycleCursor = (confettiRecycleCursor + 1) % MAX_CONFETTI_POOL;
             }
+
+            Confettis[targetIndex].setPosition(Point3D<float>(0.0f, -floorY, 600.0f));
+            Confettis[targetIndex].setVelocity(velocity);
+            //Confettis[targetIndex].initColor();
         }
     }
 };
