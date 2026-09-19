@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Processing.h"
+#include "C:\Users\Admin\source\repos\8INF935\processing-cpp\include\Processing.h"
 #include "GraphicsConstants.h"
 #include "AimSolvers.h"
 #include "ProjectileFactory.h"
@@ -16,6 +16,7 @@
 #include <random>
 #include <numbers>
 #include <array>
+#include <algorithm>
 
 enum class GameState {
     Menu,
@@ -30,9 +31,11 @@ struct Sketch : public Processing::PApplet {
     // --- Gameplay State ---
     const int neededGoal{ 10 };
     std::vector<std::unique_ptr<Particle<float>>> particles;
-    static constexpr size_t MAX_CONFETTI_POOL = 1000000;
+
+    // Contiguous Swap-and-Pop Pool
+    static constexpr size_t MAX_CONFETTI_POOL = 10000;
     std::array<Confetti, MAX_CONFETTI_POOL> Confettis;
-    size_t confettiPoolCursor{ 0 };
+    int activeConfetti{ 0 };
     float confettiSpawnAccumulator{ 0.0f };
 
     AimMode currentAimMode{ AimMode::TurretSpherical };
@@ -40,9 +43,8 @@ struct Sketch : public Processing::PApplet {
     bool showTrajectories{ false };
     TargetGoal goal{ 120.0f };
     float totalTime{};
-    int confettiCount{ 1000 };
+    int confettiCount{ 100 };
     float accumulator{ 0 };
-    int activeConfetti{ 0 };
 
     // --- Timing ---
     float customDeltaTime{};
@@ -54,7 +56,7 @@ struct Sketch : public Processing::PApplet {
     }
 
     void setup() override {
-        std::cout << Confettis.size() << std::endl;
+        std::cout << "Max pool capacity: " << Confettis.size() << std::endl;
     }
 
     void draw() override {
@@ -86,11 +88,7 @@ struct Sketch : public Processing::PApplet {
     }
 
     void clearConfetti() {
-        for (auto& confetti : Confettis) {
-            confetti.isActive = false;
-        }
         activeConfetti = 0;
-        confettiPoolCursor = 0;
         confettiSpawnAccumulator = 0.0f;
     }
 
@@ -268,8 +266,16 @@ private:
         );
     }
 
+    // O(1) swap-and-pop removal to maintain dense memory
+    void killConfetti(size_t index) {
+        if (activeConfetti <= 0 || index >= static_cast<size_t>(activeConfetti)) return;
+
+        Confettis[index] = Confettis[activeConfetti - 1];
+        --activeConfetti;
+    }
+
     void updateParticles(float timestep) {
-        // Dynamic projectile list integration & removal
+        // Projectile update
         for (auto it = particles.begin(); it != particles.end();) {
             auto& particle = *it;
             particle->applyVerletIntegration(timestep);
@@ -284,21 +290,19 @@ private:
             }
         }
 
-        // Confetti physics integration & deactivation with early loop exit
-        int checkedCount = 0;
-        for (size_t i = 0; i < Confettis.size() && checkedCount < activeConfetti; ++i) {
-            if (!Confettis[i].isActive) continue;
-
-            ++checkedCount;
+        // Confetti: Strictly packed iteration with swap-and-pop removal
+        for (size_t i = 0; i < static_cast<size_t>(activeConfetti);) {
             Confettis[i].applyVerletIntegration(timestep);
-
-            /*
+            
             const Point3D<float>& pos = Confettis[i].getPosition();
             if (goal.checkHit(pos) || Arena::isOutOfBounds(pos)) {
-                Confettis[i].isActive = false;
-                --activeConfetti;
+                killConfetti(i);
+                // Do NOT increment i: the swapped particle at index i must be processed next
             }
-            */
+            else {
+                ++i;
+            }
+            
         }
     }
 
@@ -311,13 +315,9 @@ private:
             }
         }
 
-        // Render confetti with early loop exit
-        int drawnCount = 0;
-        for (size_t i = 0; i < Confettis.size() && drawnCount < activeConfetti; ++i) {
-            if (Confettis[i].isActive) {
-                Confettis[i].draw();
-                ++drawnCount;
-            }
+        // Tightly packed linear memory stream to GPU
+        for (size_t i = 0; i < static_cast<size_t>(activeConfetti); ++i) {
+            Confettis[i].draw();
         }
     }
 
@@ -369,7 +369,7 @@ private:
 
         std::string projectileText = ProjectileFactory::getDisplayName(currentProjectile);
 
-        text("Particle Count: " + std::to_string(Particle<float>::particleCount) +
+        text("Particle instance Count: " + std::to_string(Particle<float>::particleCount) +
             "    FPS: " + std::to_string(std::lround(customFPS)) +
             "   ms/frame: " + std::to_string(std::lround(customDeltaTime * 1000.0f)), 15, 30);
         text("Aim Mode [M]: " + modeText, 15, 60);
@@ -398,8 +398,6 @@ private:
         std::uniform_real_distribution<float> distPhi(0.0f, 2.0f * std::numbers::pi_v<float>);
         std::uniform_real_distribution<float> distSpeed(250.0f, 400.0f);
 
-        const size_t poolSize = Confettis.size();
-
         for (int i = 0; i < toSpawn; ++i) {
             float cosTheta = distCosTheta(rng);
             float sinTheta = std::sqrt(std::max(0.0f, 1.0f - cosTheta * cosTheta));
@@ -412,17 +410,16 @@ private:
                 speed * sinTheta * std::sin(phi)
             );
 
-            // Fast rotating cursor lookup
-            for (size_t checked = 0; checked < poolSize; ++checked) {
-                size_t candidateIdx = (confettiPoolCursor + checked) % poolSize;
-                if (!Confettis[candidateIdx].isActive) {
-                    Confettis[candidateIdx].setPosition(Point3D<float>(0.0f, -floorY, 600.0f));
-                    Confettis[candidateIdx].setVelocity(velocity);
-                    Confettis[candidateIdx].isActive = true;
-                    ++activeConfetti;
-                    confettiPoolCursor = (candidateIdx + 1) % poolSize;
-                    break;
-                }
+            // O(1) direct insertion into active dense partition
+            if (static_cast<size_t>(activeConfetti) < MAX_CONFETTI_POOL) {
+                Confettis[activeConfetti].setPosition(Point3D<float>(0.0f, -floorY, 600.0f));
+                Confettis[activeConfetti].setVelocity(velocity);
+                ++activeConfetti;
+            }
+            else {
+                // Hard-cap ceiling reached: recycle slot 0 (oldest active survivor)
+                Confettis[0].setPosition(Point3D<float>(0.0f, -floorY, 600.0f));
+                Confettis[0].setVelocity(velocity);
             }
         }
     }
