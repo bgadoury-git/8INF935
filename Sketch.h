@@ -1,6 +1,6 @@
 #pragma once
 
-#include "C:\Users\Admin\source\repos\8INF935\processing-cpp\include\Processing.h"
+#include "Processing.h"
 #include "GraphicsConstants.h"
 #include "AimSolvers.h"
 #include "ProjectileFactory.h"
@@ -35,7 +35,7 @@ struct Sketch : public Processing::PApplet {
     std::vector<std::unique_ptr<Particle<float>>> particles;
 
     // Contiguous Swap-and-Pop Pool
-    static constexpr size_t MAX_CONFETTI_POOL = 2'000'000;
+    static constexpr size_t MAX_CONFETTI_POOL = 10'000'000;
     std::array<Confetti, MAX_CONFETTI_POOL> Confettis;
     int activeConfetti{ 0 };
     float confettiSpawnAccumulator{ 0.0f };
