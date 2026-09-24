@@ -1,8 +1,7 @@
 #pragma once
 #include "Vector3D.h"
-#include <algorithm>
+#include "MathHelpers.h"
 #include <cmath>
-#include <limits>
 #include <iostream>
 #include <type_traits>
 
@@ -14,29 +13,34 @@ private:
 	T m_y{};
 	T m_z{};
 
-	static bool equalComponents(T left, T right) {
-		if constexpr (std::is_floating_point_v<T>) {
-			const T difference = std::abs(left - right);
-			const T scale = std::max({ static_cast<T>(1), std::abs(left), std::abs(right) });
-			return difference <= std::numeric_limits<T>::epsilon() * scale;
-		}
-		else {
-			return left == right;
-		}
-	}
-
 public:
 	Point3D(T x = {}, T y = {}, T z = {})
 		: m_x(x), m_y(y), m_z(z) {
+	}
+
+	explicit Point3D(const Polar<T>& polar) {
+		setPolar(polar);
 	}
 
 	void setX(T x) { m_x = x; }
 	void setY(T y) { m_y = y; }
 	void setZ(T z) { m_z = z; }
 
+	void setPolar(const Polar<T>& polar) {
+		polarToCartesian(polar, m_x, m_y, m_z);
+	}
+
+	void setPolar(T radius, T azimuth, T elevation) {
+		setPolar(Polar<T>{ radius, azimuth, elevation });
+	}
+
 	T getX() const { return m_x; }
 	T getY() const { return m_y; }
 	T getZ() const { return m_z; }
+
+	Polar<T> getPolar() const {
+		return cartesianToPolar(m_x, m_y, m_z);
+	}
 
 	T distanceTo(const Point3D& other) const {
 		const T dx = static_cast<T>(m_x) - other.m_x;
@@ -88,4 +92,3 @@ public:
 		return Vector3D<T>(m_x - other.m_x, m_y - other.m_y, m_z - other.m_z);
 	}
 };
-

@@ -1,5 +1,6 @@
 #include "Vector3DTests.h"
 #include "TestHelpers.h"
+#include "MathHelpers.h"
 #include <sstream>
 #include <iostream>
 #include <vector>
@@ -315,6 +316,75 @@ namespace Vector3DTests {
 		return true;
 	}
 
+	static bool testPolarConstructor() {
+		Polar<double> polar{ 10.0, 0.0, 0.0 }; 
+		Vector3D<double> v(polar);
+
+		Vector3D<double> expected(0.0, 0.0, 10.0);
+		if (v != expected) {
+			std::cerr << "testPolarConstructor failed: expected " << expected << ", got " << v << std::endl;
+			return false;
+		}
+		return true;
+	}
+
+	static bool testSetPolar() {
+		Vector3D<double> v;
+		const double pi = std::numbers::pi; 
+		v.setPolar(5.0, pi / 2.0, 0.0);
+
+		Vector3D<double> expected(5.0, 0.0, 0.0);
+		if (v != expected) {
+			std::cerr << "testSetPolar failed: expected " << expected << ", got " << v << std::endl;
+			return false;
+		}
+		return true;
+	}
+
+	static bool testGetPolar() {
+		const double pi = std::numbers::pi; 
+
+		Vector3D<double> vUp(0.0, 4.0, 0.0);
+		auto polarUp = vUp.getPolar();
+		if (!equalComponents(polarUp.radius, 4.0) ||  
+			!equalComponents(polarUp.elevation, pi / 2.0)) { 
+			std::cerr << "testGetPolarAxes failed for +Y axis!" << std::endl;
+			return false;
+		}
+		Vector3D<double> vRight(3.0, 0.0, 0.0);
+		auto polarRight = vRight.getPolar();
+		if (!equalComponents(polarRight.radius, 3.0) || 
+			!equalComponents(polarRight.azimuth, pi / 2.0) ||  
+			!equalComponents(polarRight.elevation, 0.0)) {  
+			std::cerr << "testGetPolarAxes failed for +X axis!" << std::endl;
+			return false;
+		}
+
+		return true;
+	}
+
+	
+	static bool testPolarRoundTrip() {
+		double originalRadius = 7.5;
+		double originalAzimuth = 0.785398;  
+		double originalElevation = 0.523599; 
+
+		
+		Vector3D<double> v(Polar<double>(originalRadius, originalAzimuth, originalElevation));
+		auto resultPolar = v.getPolar();
+
+		if (!equalComponents(resultPolar.radius, originalRadius) || 
+			!equalComponents(resultPolar.azimuth, originalAzimuth) || 
+			!equalComponents(resultPolar.elevation, originalElevation)) { 
+			std::cerr << "testPolarRoundTrip failed!" << std::endl;
+			std::cerr << "  Original: r=" << originalRadius << ", az=" << originalAzimuth << ", el=" << originalElevation << std::endl;
+			std::cerr << "  Result:   r=" << resultPolar.radius << ", az=" << resultPolar.azimuth << ", el=" << resultPolar.elevation << std::endl;
+			return false;
+		}
+
+		return true;
+	}
+
 	bool testVector3D() {
 		const std::vector<TestCase> tests = {
 			// Construction & Accessors
@@ -325,6 +395,10 @@ namespace Vector3DTests {
 			{"GetX", testGetX},
 			{"GetY", testGetY},
 			{"GetZ", testGetZ},
+			{"Polar Initialization", testPolarConstructor},
+			{"setPolar", testSetPolar },
+			{"setGetPolar", testGetPolar},
+			{"Test roundtrip", testPolarRoundTrip},
 
 			// Metrics & Normalization
 			{"Length", testLength},
