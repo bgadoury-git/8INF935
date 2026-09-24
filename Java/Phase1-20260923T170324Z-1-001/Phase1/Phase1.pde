@@ -11,7 +11,7 @@ enum GameState {
 GameState currentState = GameState.Menu;
 
 // --- Gameplay State ---
-final int neededGoal = 10;
+final int neededGoal = 10;  
 ArrayList<Particle> particles = new ArrayList<Particle>();
 
 // Contiguous Swap-and-Pop Pool
@@ -27,7 +27,7 @@ boolean showTrajectories = false;
 
 TargetGoal goal = new TargetGoal(120.0f);
 float totalTime = 0;
-int confettiSpawnAmount = 10000;
+int confettiSpawnAmount = 0;
 float accumulator = 0;
 boolean solidColor = true;
 
@@ -42,6 +42,7 @@ long lastTimeMs = 0;
 
 // Utility instances
 Arena arena = new Arena();
+Cannon cannon = new Cannon();
 AimSolvers aimSolvers = new AimSolvers();
 ProjectileFactory projectileFactory = new ProjectileFactory();
 Tests testSuite = new Tests();
@@ -125,6 +126,7 @@ void drawMenuScreen() {
 void drawGameplay() {
     arena.setupLighting(this);
     arena.draw(this);
+    cannon.draw(this);
     goal.draw(this);
 
     spawnConfettis(confettiSpawnAmount * customDeltaTime);
@@ -180,7 +182,7 @@ public void mousePressed() {
 
     Vector3D velocity = computeCurrentAimVelocity();
     particles.add(
-        projectileFactory.create(currentProjectile, new Point3D(0.0f, 0.0f, 0.0f), velocity)
+        projectileFactory.create(currentProjectile, new Point3D(0.0f, -150.0f, 0.0f), velocity)
     );
 }
 
@@ -457,7 +459,7 @@ void renderParticleTrace(Particle particle) {
 }
 
 void renderAimPreview() {
-    Point3D origin = new Point3D(0.0f, 0.0f, 0.0f);
+    Point3D origin = new Point3D(0.0f, -150.0f, 0.0f);
     Vector3D gravity = new Vector3D(0.0f, -PhysicsConstants.GRAVITY, 0.0f);
     Vector3D aimVelocity = computeCurrentAimVelocity();
     Vector3D acceleration = new Vector3D(0,0,0);
@@ -486,31 +488,97 @@ String formatWithCommas(int value) {
 
 void renderHUD() {
     reset2DContext();
-    textAlign(LEFT, BASELINE);
 
-    fill(230);
-    textSize(22);
+    renderScoreHUD();
+    renderSidePanel();
+}
+
+// Big, centered score readout sitting near the cannon (which renders
+// close to screen-center since the fixed camera always looks straight at it).
+void renderScoreHUD() {
+    float cx = width / 2.0f;
+    float cy = height * 0.36f;
+
+    noStroke();
+    fill(0, 0, 0, 120);
+    rectMode(CENTER);
+    rect(cx, cy, 280.0f, 120.0f, 14.0f);
+    rectMode(CORNER);
+
+    textAlign(CENTER, CENTER);
+
+    fill(255, 210, 60);
+    textSize(20);
+    text("SCORE", cx, cy - 34.0f);
+
+    textSize(54);
+    text(goal.getScore() + " / " + neededGoal, cx, cy + 16.0f);
+}
+
+// Compact performance readout (small text) and the list of active key
+// bindings, both stacked along the right edge of the screen.
+void renderSidePanel() {
+    int totalCount = particles.size() + MAX_CONFETTI_POOL;
+
+    String[] statLines = {
+        "FPS: " + Math.round(customFPS) + "   ms/frame: " + Math.round(smoothedDeltaTime * 1000.0f),
+        "Particle instances: " + formatWithCommas(totalCount),
+        "Active confettis: " + formatWithCommas(activeConfetti)
+    };
+
     String modeText = (currentAimMode == AimMode.RayGroundTarget)
         ? "Ground Target Plane (Raycast)"
         : "Turret (Pitch/Yaw Spherical)";
-
     String projectileText = projectileFactory.getDisplayName(currentProjectile);
-    
-    int totalCount = particles.size() + MAX_CONFETTI_POOL;
 
-    text("Particle instance Count: " + formatWithCommas(totalCount) +
-        "    FPS: " + Math.round(customFPS) +
-        "   ms/frame: " + Math.round(smoothedDeltaTime * 1000.0f), 15, 30);
-    text("Aim Mode [M]: " + modeText, 15, 60);
-    text("Current Projectile [Scroll]: " + projectileText, 15, 90);
-    text("Display trajectories [T]: " + (showTrajectories ? "ON" : "OFF"), 15, 120);
-    text("Score : " + goal.getScore() + "/" + neededGoal, 15, 150);
-    text("Confettis per second : " + formatWithCommas(confettiSpawnAmount) + " [W] + 10 000 [S] -10 000", 15, 180);
-    text("Go to end screen : [G]", 15, 210);
-    text("Active Confettis: " + formatWithCommas(activeConfetti), 15, 240);
-    text("Make Confettis uniform: [C]", 15, 270);
-    text("Multi-colr processing variant [V] " + (useVBO ? "ON" : "OFF"), 15, 300);
-    text("Cull confettis at floor level [B] " + (cullConfettis ? "ON" : "OFF"), 15, 330);
+    String[] controlLines = {
+        "Aim Mode [M]: " + modeText,
+        "Projectile [Scroll]: " + projectileText,
+        "Trajectories [T]: " + (showTrajectories ? "ON" : "OFF"),
+        "Confetti rate [W/S]: " + formatWithCommas(confettiSpawnAmount) + "/s",
+        "Confetti uniform [C]: " + (solidColor ? "ON" : "OFF"),
+        "Multi-color variant [V]: " + (useVBO ? "ON" : "OFF"),
+        "Cull at floor [B]: " + (cullConfettis ? "ON" : "OFF"),
+        "End screen [G]"
+    };
+
+    float statLineHeight = 16.0f;
+    float sectionGap = 18.0f;
+    float controlLineHeight = 24.0f;
+    float panelHeight = 20.0f
+        + statLines.length * statLineHeight
+        + sectionGap
+        + controlLines.length * controlLineHeight
+        + 14.0f;
+
+    float rightEdge = width - 20.0f;
+    float leftEdge = rightEdge - 380.0f;
+    float top = 16.0f;
+
+    noStroke();
+    fill(0, 0, 0, 110);
+    rectMode(CORNERS);
+    rect(leftEdge, top, rightEdge, top + panelHeight, 10.0f);
+    rectMode(CORNER);
+
+    textAlign(RIGHT, TOP);
+    float y = top + 12.0f;
+
+    fill(190, 200, 210, 230);
+    textSize(13);
+    for (String line : statLines) {
+        text(line, rightEdge - 14.0f, y);
+        y += statLineHeight;
+    }
+
+    y += sectionGap;
+
+    fill(235);
+    textSize(16);
+    for (String line : controlLines) {
+        text(line, rightEdge - 14.0f, y);
+        y += controlLineHeight;
+    }
 }
 
 void spawnConfettis(float quantity) {
