@@ -1,46 +1,47 @@
 #pragma once
-#include <algorithm>
+#include "MathHelpers.h"
 #include <cmath>
 #include <iostream>
-#include <limits>
 
 template <std::floating_point T = double>
 class Vector3D
 {
 private:
-	T m_x { };
-	T m_y { };
-	T m_z { };
-
-	static bool equalComponents(T left, T right) {
-		if constexpr (std::is_floating_point_v<T>) {
-			const T difference = std::abs(left - right);
-			const T scale = std::max({ static_cast<T>(1), std::abs(left), std::abs(right) });
-			return difference <= std::numeric_limits<T>::epsilon() * scale;
-		}
-		else {
-			return left == right;
-		}
-	}
+	T m_x{ };
+	T m_y{ };
+	T m_z{ };
 
 public:
 	Vector3D(T x = {}, T y = {}, T z = {})
 		: m_x(x), m_y(y), m_z(z) {
 	}
-	
+
+	explicit Vector3D(const Polar<T>& polar) {
+		setPolar(polar);
+	}
+
 	void setX(T x) { m_x = x; }
 	void setY(T y) { m_y = y; }
 	void setZ(T z) { m_z = z; }
+
+	void setPolar(const Polar<T>& polar) {
+		polarToCartesian(polar, m_x, m_y, m_z);
+	}
+
+	void setPolar(T radius, T azimuth, T elevation) {
+		setPolar(Polar<T>{ radius, azimuth, elevation });
+	}
 
 	T getX() const { return m_x; }
 	T getY() const { return m_y; }
 	T getZ() const { return m_z; }
 
+	Polar<T> getPolar() const {
+		return cartesianToPolar(m_x, m_y, m_z);
+	}
+
 	T length() const {
-		return std::sqrt(
-			m_x * m_x +
-			m_y * m_y +
-			m_z * m_z);
+		return std::sqrt(m_x * m_x + m_y * m_y + m_z * m_z);
 	}
 
 	T lengthSquared() const {
@@ -60,10 +61,7 @@ public:
 	Vector3D<T> normalized() const {
 		const T len = length();
 		if (len > static_cast<T>(0)) {
-			return Vector3D<T>(
-				m_x / len,
-				m_y / len,
-				m_z / len);
+			return Vector3D<T>(m_x / len, m_y / len, m_z / len);
 		}
 		return Vector3D<T>{};
 	}
@@ -80,7 +78,6 @@ public:
 		);
 	}
 
-	// Angle between two vectors in radians
 	double angleTo(const Vector3D& other) const {
 		const double denominator = length() * other.length();
 		if (denominator == 0.0) {
@@ -91,7 +88,6 @@ public:
 		return std::acos(cosine);
 	}
 
-	// Operator overloads
 	Vector3D& operator=(const Vector3D& other) {
 		if (this != &other) {
 			m_x = other.m_x;
@@ -115,7 +111,7 @@ public:
 
 	Vector3D operator/(T scalar) const {
 		if (scalar == T{}) {
-			throw std::invalid_argument("Division by zero in Vector3D operator/");	
+			throw std::invalid_argument("Division by zero in Vector3D operator/");
 		}
 		return Vector3D(m_x / scalar, m_y / scalar, m_z / scalar);
 	}
