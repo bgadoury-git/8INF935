@@ -92,8 +92,17 @@ class TargetGoal {
     private int m_score;
     private float DeckOffset = 50.0f;
 
+    // Boat geometry, derived once from m_radius and shared by draw() and
+    // checkHit() so the hitbox always matches what is actually drawn.
+    private float m_hullRadius;
+    private float m_hullDepth;
+    private float m_mastHeight;
+
     public TargetGoal(float radius) {
         m_radius = radius;
+        m_hullRadius = m_radius * 0.55f;
+        m_hullDepth = m_hullRadius * 0.6f;
+        m_mastHeight = m_radius * 1.6f;
         m_position = new Point3D(0.0f, -GraphicsConstants.floorY, 600.0f);
         m_score = 0;
     }
@@ -110,14 +119,39 @@ class TargetGoal {
     }
 
     boolean checkHit(Point3D particlePos) {
-        if (particlePos.getY() <= -(GraphicsConstants.floorY - DeckOffset)) {
-            float dx = particlePos.getX() - m_position.getX();
-            float dz = particlePos.getZ() - m_position.getZ();
-            if ((dx * dx + dz * dz) <= (m_radius * m_radius)) {
-                ++m_score;
-                reset();
-                return true;
-            }
+        // Vertical extent of the boat: from the bottom of the hull (underwater)
+        // up to the tip of the sail. Anything outside this band is a clean miss —
+        // this is what stops "hits" registering deep below the hull.
+        float deckY = -(GraphicsConstants.floorY - DeckOffset);
+        float hullBottomY = deckY - m_hullDepth;
+        float sailTopY = deckY + m_mastHeight;
+
+        float py = particlePos.getY();
+        if (py < hullBottomY || py > sailTopY) {
+            return false;
+        }
+
+        float dx = particlePos.getX() - m_position.getX();
+        float dz = particlePos.getZ() - m_position.getZ();
+
+        boolean hit;
+        if (py >= deckY) {
+            // Sail band: the triangle only bulges toward +X (world), the mast
+            // itself sits at dx = 0. Keep only a thin margin on the empty
+            // side (-X) so aiming past the mast, away from the sail, misses.
+            float sailRadius = m_hullRadius * 1.10f;
+            float mastMargin = m_hullRadius * 0.25f;
+            hit = (dx >= -mastMargin) && ((dx * dx + dz * dz) <= (sailRadius * sailRadius));
+        } else {
+            // Hull band: hugs the drawn hull closely, symmetric around the mast.
+            float hullHitRadius = m_hullRadius * 1.05f;
+            hit = (dx * dx + dz * dz) <= (hullHitRadius * hullHitRadius);
+        }
+
+        if (hit) {
+            ++m_score;
+            reset();
+            return true;
         }
         return false;
     }
@@ -128,8 +162,6 @@ class TargetGoal {
         app.pushMatrix();
         app.translate(m_position.getX(), GraphicsConstants.floorY - DeckOffset, m_position.getZ());
 
-        float hullRadius = m_radius * 0.55f;
-        float hullDepth = hullRadius * 0.6f;
         int segments = 14;
 
         // --- Hull: half circle, flat edge on the waterline, bulging downward ---
@@ -139,25 +171,24 @@ class TargetGoal {
         app.beginShape();
         for (int i = 0; i <= segments; ++i) {
             float t = PI * (float)i / (float)segments;
-            float hx = cos(t) * hullRadius;
-            float hy = sin(t) * hullDepth;
+            float hx = cos(t) * m_hullRadius;
+            float hy = sin(t) * m_hullDepth;
             app.vertex(hx, hy, 0.0f);
         }
         app.endShape(CLOSE);
         app.noStroke();
 
         // --- Mast ---
-        float mastHeight = m_radius * 1.6f;
         app.stroke(70, 48, 28);
         app.strokeWeight(3.0f);
-        app.line(0.0f, 0.0f, 0.0f, 0.0f, -mastHeight, 0.0f);
+        app.line(0.0f, 0.0f, 0.0f, 0.0f, -m_mastHeight, 0.0f);
         app.noStroke();
 
         // --- Sail (simple triangle) ---
         app.fill(245, 245, 235, 235);
-        app.triangle(0.0f, -mastHeight,
-                     0.0f, -mastHeight * 0.08f,
-                     hullRadius * 1.05f, -mastHeight * 0.5f);
+        app.triangle(0.0f, -m_mastHeight,
+                     0.0f, -m_mastHeight * 0.08f,
+                     m_hullRadius * 1.05f, -m_mastHeight * 0.5f);
 
         app.popMatrix();
         app.noStroke();
