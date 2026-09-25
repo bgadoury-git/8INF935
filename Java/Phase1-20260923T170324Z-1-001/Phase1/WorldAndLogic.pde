@@ -9,36 +9,67 @@ class Arena {
     final float WallThickness = 10.0f;
     final float MaxCeilingHeight = 2000.0f;
 
+    // Depth (Z) at which the grassy plain ends and the water begins.
+    // The cannon sits on the plain side (Z < ShoreZ), the boats float
+    // on the water side (Z >= ShoreZ), matching TargetGoal's spawn range.
+    final float ShoreZ = 150.0f;
+
     void setupLighting(processing.core.PApplet app) {
-        app.background(18, 24, 38);
+        app.background(130, 190, 232); // open sky
         app.camera(0.0f, -40.0f, -520.0f,
                    0.0f, 0.0f, 0.0f,
                    0.0f, 1.0f, 0.0f);
         app.lights();
-        app.ambientLight(70, 80, 110);
-        app.directionalLight(220, 220, 220, -0.4f, -0.8f, -0.5f);
+        app.ambientLight(130, 135, 140);
+        app.directionalLight(255, 250, 232, -0.35f, -0.75f, -0.4f);
     }
 
     void draw(processing.core.PApplet app) {
-        // --- Floor Base ---
+        float floorTopY = GraphicsConstants.floorY - 2.0f;
+
+        // --- Plain (grass), from the back wall up to the shoreline ---
+        float plainDepth = ShoreZ - (-Extent);
         app.noStroke();
-        app.fill(35, 48, 68);
+        app.fill(70, 120, 60);
         app.pushMatrix();
-        app.translate(0.0f, GraphicsConstants.floorY - 2.0f, 0.0f);
-        app.box(Extent * 2.0f, 4.0f, Extent * 2.0f);
+        app.translate(0.0f, floorTopY, -Extent + plainDepth * 0.5f);
+        app.box(Extent * 2.0f, 4.0f, plainDepth);
         app.popMatrix();
 
-        // --- Floor Grid ---
-        app.stroke(90, 110, 140);
+        // --- Water, from the shoreline to the far wall ---
+        float waterDepth = Extent - ShoreZ;
+        app.fill(40, 95, 165, 235);
+        app.pushMatrix();
+        app.translate(0.0f, floorTopY, ShoreZ + waterDepth * 0.5f);
+        app.box(Extent * 2.0f, 4.0f, waterDepth);
+        app.popMatrix();
+
+        // --- Shoreline strip ---
+        app.fill(210, 195, 150);
+        app.pushMatrix();
+        app.translate(0.0f, floorTopY - 0.5f, ShoreZ);
+        app.box(Extent * 2.0f, 3.0f, 26.0f);
+        app.popMatrix();
+
+        // --- Grass Grid (plain only) ---
+        app.stroke(95, 150, 90, 160);
         app.strokeWeight(1.0f);
         for (float coord = -Extent; coord <= Extent; coord += Spacing) {
-            app.line(coord, GraphicsConstants.floorY, -Extent, coord, GraphicsConstants.floorY, Extent);
+            app.line(coord, GraphicsConstants.floorY, -Extent, coord, GraphicsConstants.floorY, ShoreZ);
+        }
+        for (float coord = -Extent; coord <= ShoreZ; coord += Spacing) {
+            app.line(-Extent, GraphicsConstants.floorY, coord, Extent, GraphicsConstants.floorY, coord);
+        }
+
+        // --- Water ripples (water side only) ---
+        app.stroke(170, 220, 240, 140);
+        for (float coord = ShoreZ + Spacing; coord <= Extent; coord += Spacing * 2.0f) {
             app.line(-Extent, GraphicsConstants.floorY, coord, Extent, GraphicsConstants.floorY, coord);
         }
         app.noStroke();
 
-        // --- Boundary Walls ---
-        app.fill(45, 60, 85, 180);
+        // --- Boundary Walls (distant hills / haze) ---
+        app.fill(75, 110, 95, 160);
         float wallCenterY = GraphicsConstants.floorY - (WallHeight * 0.5f);
 
         app.pushMatrix(); app.translate(0.0f, wallCenterY, -Extent); app.box(Extent * 2.0f, WallHeight, WallThickness); app.popMatrix();
@@ -59,9 +90,19 @@ class TargetGoal {
     private float m_radius;
     private Point3D m_position;
     private int m_score;
+    private float DeckOffset = 50.0f;
+
+    // Boat geometry, derived once from m_radius and shared by draw() and
+    // checkHit() so the hitbox always matches what is actually drawn.
+    private float m_hullRadius;
+    private float m_hullDepth;
+    private float m_mastHeight;
 
     public TargetGoal(float radius) {
         m_radius = radius;
+        m_hullRadius = m_radius * 0.55f;
+        m_hullDepth = m_hullRadius * 0.6f;
+        m_mastHeight = m_radius * 1.6f;
         m_position = new Point3D(0.0f, -GraphicsConstants.floorY, 600.0f);
         m_score = 0;
     }
@@ -78,31 +119,76 @@ class TargetGoal {
     }
 
     boolean checkHit(Point3D particlePos) {
-        if (particlePos.getY() <= -GraphicsConstants.floorY) {
-            float dx = particlePos.getX() - m_position.getX();
-            float dz = particlePos.getZ() - m_position.getZ();
-            if ((dx * dx + dz * dz) <= (m_radius * m_radius)) {
-                ++m_score;
-                reset();
-                return true;
-            }
+        // Vertical extent of the boat: from the bottom of the hull (underwater)
+        // up to the tip of the sail. Anything outside this band is a clean miss —
+        // this is what stops "hits" registering deep below the hull.
+        float deckY = -(GraphicsConstants.floorY - DeckOffset);
+        float hullBottomY = deckY - m_hullDepth;
+        float sailTopY = deckY + m_mastHeight;
+
+        float py = particlePos.getY();
+        if (py < hullBottomY || py > sailTopY) {
+            return false;
+        }
+
+        float dx = particlePos.getX() - m_position.getX();
+        float dz = particlePos.getZ() - m_position.getZ();
+
+        boolean hit;
+        if (py >= deckY) {
+            // Sail band: the triangle only bulges toward +X (world), the mast
+            // itself sits at dx = 0. Keep only a thin margin on the empty
+            // side (-X) so aiming past the mast, away from the sail, misses.
+            float sailRadius = m_hullRadius * 1.10f;
+            float mastMargin = m_hullRadius * 0.25f;
+            hit = (dx >= -mastMargin) && ((dx * dx + dz * dz) <= (sailRadius * sailRadius));
+        } else {
+            // Hull band: hugs the drawn hull closely, symmetric around the mast.
+            float hullHitRadius = m_hullRadius * 1.05f;
+            hit = (dx * dx + dz * dz) <= (hullHitRadius * hullHitRadius);
+        }
+
+        if (hit) {
+            ++m_score;
+            reset();
+            return true;
         }
         return false;
     }
 
     void draw(processing.core.PApplet app) {
+        // Drawn upright, facing the cannon (no rotateX), so it reads as a
+        // boat sitting on the water rather than a decal painted on the ground.
         app.pushMatrix();
-        app.translate(m_position.getX(), GraphicsConstants.floorY - 4.5f, m_position.getZ());
-        app.rotateX(-PI * 0.5f);
+        app.translate(m_position.getX(), GraphicsConstants.floorY - DeckOffset, m_position.getZ());
 
-        app.fill(255, 50, 50, 220);
-        app.stroke(255, 180, 180);
-        app.strokeWeight(3.0f);
-        app.circle(0.0f, 0.0f, m_radius * 2.0f);
+        int segments = 14;
 
-        app.fill(255, 220, 30, 240);
+        // --- Hull: half circle, flat edge on the waterline, bulging downward ---
+        app.stroke(70, 42, 22);
+        app.strokeWeight(1.5f);
+        app.fill(120, 78, 48);
+        app.beginShape();
+        for (int i = 0; i <= segments; ++i) {
+            float t = PI * (float)i / (float)segments;
+            float hx = cos(t) * m_hullRadius;
+            float hy = sin(t) * m_hullDepth;
+            app.vertex(hx, hy, 0.0f);
+        }
+        app.endShape(CLOSE);
         app.noStroke();
-        app.circle(0.0f, 0.0f, m_radius * 0.8f);
+
+        // --- Mast ---
+        app.stroke(70, 48, 28);
+        app.strokeWeight(3.0f);
+        app.line(0.0f, 0.0f, 0.0f, 0.0f, -m_mastHeight, 0.0f);
+        app.noStroke();
+
+        // --- Sail (simple triangle) ---
+        app.fill(245, 245, 235, 235);
+        app.triangle(0.0f, -m_mastHeight,
+                     0.0f, -m_mastHeight * 0.08f,
+                     m_hullRadius * 1.05f, -m_mastHeight * 0.5f);
 
         app.popMatrix();
         app.noStroke();
@@ -111,6 +197,54 @@ class TargetGoal {
     int getScore() { return m_score; }
     Point3D getPosition() { return m_position; }
     float getRadius() { return m_radius; }
+}
+
+// Purely visual launcher standing on the plain, centered on the
+// projectile spawn point (0,0,0). Does not affect spawn origin,
+// physics or aiming in any way — display only, built from plain boxes.
+class Cannon {
+    void draw(processing.core.PApplet app, Vector3D aimDirection) {
+        app.noStroke();
+
+        // Support pillar linking the firing point down to the ground
+        float pillarHeight = GraphicsConstants.floorY;
+        app.fill(65, 65, 72);
+        app.pushMatrix();
+        app.translate(0.0f, pillarHeight * 0.5f +100, 0.0f);
+        app.box(50.0f, pillarHeight -150, 50.0f);
+        app.popMatrix();
+
+        // Base plate resting on the plain
+        app.fill(50, 50, 58);
+        app.pushMatrix();
+        app.translate(0.0f, GraphicsConstants.floorY - 6.0f, 0.0f);
+        app.box(110.0f, 12.0f, 110.0f);
+        app.popMatrix();
+
+        // Turret body, at the projectiles' firing height (stays fixed; only the barrel aims)
+        app.fill(95, 100, 112);
+        app.pushMatrix();
+        app.translate(0.0f, 150.0f, 0.0f);
+        app.box(70.0f, 55.0f, 70.0f);
+        app.popMatrix();
+
+        // Barrel, rotated to match the current aim direction. Pivots from
+        // the turret's center, then slides forward along its own (rotated)
+        // axis so it still sits the same distance out as before.
+        Vector3D dir = aimDirection.normalized();
+        float horizLen = sqrt(dir.getX() * dir.getX() + dir.getZ() * dir.getZ());
+        float yaw = atan2(dir.getX(), dir.getZ());
+        float pitch = atan2(dir.getY(), horizLen);
+
+        app.fill(40, 40, 46);
+        app.pushMatrix();
+        app.translate(0.0f, 150.0f, 0.0f);
+        app.rotateY(yaw);
+        app.rotateX(pitch);
+        app.translate(0.0f, 0.0f, 55.0f);
+        app.box(24.0f, 24.0f, 90.0f);
+        app.popMatrix();
+    }
 }
 
 class AimSolvers {
@@ -158,7 +292,7 @@ class AimSolvers {
             targetPoint = new Point3D(camPos.getX() + rayDir.getX() * 1000.0f, camPos.getY() + rayDir.getY() * 1000.0f, camPos.getZ() + rayDir.getZ() * 1000.0f);
         }
 
-        Point3D origin = new Point3D(0.0f, 0.0f, 0.0f);
+        Point3D origin = new Point3D(0.0f, -150.0f, 0.0f);
         Vector3D fireDir = new Vector3D(
             targetPoint.getX() - origin.getX(),
             targetPoint.getY() - origin.getY(),
