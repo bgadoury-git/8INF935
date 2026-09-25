@@ -126,7 +126,7 @@ void drawMenuScreen() {
 void drawGameplay() {
     arena.setupLighting(this);
     arena.draw(this);
-    cannon.draw(this);
+    cannon.draw(this, computeCurrentAimVelocity());
     goal.draw(this);
 
     spawnConfettis(confettiSpawnAmount * customDeltaTime);

@@ -203,7 +203,7 @@ class TargetGoal {
 // projectile spawn point (0,0,0). Does not affect spawn origin,
 // physics or aiming in any way — display only, built from plain boxes.
 class Cannon {
-    void draw(processing.core.PApplet app) {
+    void draw(processing.core.PApplet app, Vector3D aimDirection) {
         app.noStroke();
 
         // Support pillar linking the firing point down to the ground
@@ -221,17 +221,27 @@ class Cannon {
         app.box(110.0f, 12.0f, 110.0f);
         app.popMatrix();
 
-        // Turret body, at the projectiles' firing height
+        // Turret body, at the projectiles' firing height (stays fixed; only the barrel aims)
         app.fill(95, 100, 112);
         app.pushMatrix();
         app.translate(0.0f, 150.0f, 0.0f);
         app.box(70.0f, 55.0f, 70.0f);
         app.popMatrix();
 
-        // Barrel, pointing toward the water/boats (+Z)
+        // Barrel, rotated to match the current aim direction. Pivots from
+        // the turret's center, then slides forward along its own (rotated)
+        // axis so it still sits the same distance out as before.
+        Vector3D dir = aimDirection.normalized();
+        float horizLen = sqrt(dir.getX() * dir.getX() + dir.getZ() * dir.getZ());
+        float yaw = atan2(dir.getX(), dir.getZ());
+        float pitch = atan2(dir.getY(), horizLen);
+
         app.fill(40, 40, 46);
         app.pushMatrix();
-        app.translate(0.0f, 150.0f, 55.0f);
+        app.translate(0.0f, 150.0f, 0.0f);
+        app.rotateY(yaw);
+        app.rotateX(pitch);
+        app.translate(0.0f, 0.0f, 55.0f);
         app.box(24.0f, 24.0f, 90.0f);
         app.popMatrix();
     }
