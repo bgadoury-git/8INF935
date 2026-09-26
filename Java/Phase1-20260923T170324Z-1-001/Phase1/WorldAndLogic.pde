@@ -206,44 +206,59 @@ class Cannon {
     void draw(processing.core.PApplet app, Vector3D aimDirection) {
         app.noStroke();
 
+        // Match projectile spawn point (y = -200.0f in physics -> y = 200.0f in drawing space)
+        float pivotY = 200.0f;
+        float floorY = GraphicsConstants.floorY;
+
         // Support pillar linking the firing point down to the ground
-        float pillarHeight = GraphicsConstants.floorY;
         app.fill(65, 65, 72);
         app.pushMatrix();
-        app.translate(0.0f, pillarHeight * 0.5f +100, 0.0f);
-        app.box(50.0f, pillarHeight -150, 50.0f);
+        app.translate(0.0f, (floorY + pivotY) * 0.5f, 0.0f);
+        app.box(40.0f, floorY - pivotY, 40.0f);
         app.popMatrix();
 
         // Base plate resting on the plain
         app.fill(50, 50, 58);
         app.pushMatrix();
-        app.translate(0.0f, GraphicsConstants.floorY - 6.0f, 0.0f);
+        app.translate(0.0f, floorY - 6.0f, 0.0f);
         app.box(110.0f, 12.0f, 110.0f);
         app.popMatrix();
 
-        // Turret body, at the projectiles' firing height (stays fixed; only the barrel aims)
-        app.fill(95, 100, 112);
-        app.pushMatrix();
-        app.translate(0.0f, 150.0f, 0.0f);
-        app.box(70.0f, 55.0f, 70.0f);
-        app.popMatrix();
-
-        // Barrel, rotated to match the current aim direction. Pivots from
-        // the turret's center, then slides forward along its own (rotated)
-        // axis so it still sits the same distance out as before.
+        // Compute yaw and pitch angles from the aim vector
         Vector3D dir = aimDirection.normalized();
         float horizLen = sqrt(dir.getX() * dir.getX() + dir.getZ() * dir.getZ());
         float yaw = atan2(dir.getX(), dir.getZ());
         float pitch = atan2(dir.getY(), horizLen);
 
-        app.fill(40, 40, 46);
+        // Body dimensions
+        float bodySize = 60.0f;
+        float bodyHeight = 55.0f;
+
+        // Barrel dimensions
+        float barrelWidth = 24.0f;
+        float barrelHeight = 24.0f;
+        float barrelLength = 80.0f;
+
+        // --- 1. TURRET BASE & BODY (Yaw rotation around Y) ---
         app.pushMatrix();
-        app.translate(0.0f, 150.0f, 0.0f);
-        app.rotateY(yaw);
-        app.rotateX(pitch);
-        app.translate(0.0f, 0.0f, 55.0f);
-        app.box(24.0f, 24.0f, 90.0f);
+        app.translate(0.0f, pivotY, 0.0f);
+        app.rotateY(yaw); // Body rotates horizontally with aim
+
+        app.fill(95, 100, 112);
+        app.box(bodySize, bodyHeight, bodySize);
+
+        // --- 2. BARREL (Pitch rotation around X) ---
+        // Positive pitch tilts the barrel up matching the world elevation
+        app.rotateX(pitch); 
+
+        // Shift barrel along local Z so its rear base sits at the pivot point
+        app.pushMatrix();
+        app.translate(0.0f, 0.0f, barrelLength * 0.5f);
+        app.fill(40, 40, 46);
+        app.box(barrelWidth, barrelHeight, barrelLength);
         app.popMatrix();
+
+        app.popMatrix(); // Pop turret body transformation matrix
     }
 }
 
@@ -292,7 +307,7 @@ class AimSolvers {
             targetPoint = new Point3D(camPos.getX() + rayDir.getX() * 1000.0f, camPos.getY() + rayDir.getY() * 1000.0f, camPos.getZ() + rayDir.getZ() * 1000.0f);
         }
 
-        Point3D origin = new Point3D(0.0f, -150.0f, 0.0f);
+        Point3D origin = new Point3D(-100.0f, -150.0f, 0.0f);
         Vector3D fireDir = new Vector3D(
             targetPoint.getX() - origin.getX(),
             targetPoint.getY() - origin.getY(),

@@ -48,6 +48,7 @@ ProjectileFactory projectileFactory = new ProjectileFactory();
 Tests testSuite = new Tests();
 
 public void settings() {
+    //size(GraphicsConstants.ScreenWidth, GraphicsConstants.ScreenHeight, P3D); 
     fullScreen(P3D);
 }
 
@@ -182,7 +183,7 @@ public void mousePressed() {
 
     Vector3D velocity = computeCurrentAimVelocity();
     particles.add(
-        projectileFactory.create(currentProjectile, new Point3D(0.0f, -150.0f, 0.0f), velocity)
+        projectileFactory.create(currentProjectile, new Point3D(0.0f, -200.0f, 0.0f), velocity)
     );
 }
 
@@ -459,7 +460,7 @@ void renderParticleTrace(Particle particle) {
 }
 
 void renderAimPreview() {
-    Point3D origin = new Point3D(0.0f, -150.0f, 0.0f);
+    Point3D origin = new Point3D(0.0f, -200.0f, 0.0f);
     Vector3D gravity = new Vector3D(0.0f, -PhysicsConstants.GRAVITY, 0.0f);
     Vector3D aimVelocity = computeCurrentAimVelocity();
     Vector3D acceleration = new Vector3D(0,0,0);
@@ -565,7 +566,7 @@ void renderSidePanel() {
     float y = top + 12.0f;
 
     fill(190, 200, 210, 230);
-    textSize(13);
+    textSize(21);
     for (String line : statLines) {
         text(line, rightEdge - 14.0f, y);
         y += statLineHeight;
