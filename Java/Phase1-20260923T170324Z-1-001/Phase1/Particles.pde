@@ -100,7 +100,7 @@ class Particle {
 }
 
 class Ball extends Particle {
-    public static final float baseSpeed = 50.0f;
+    public static final float baseSpeed = 150.0f;
     public static final boolean defaultGravityState = true;
 
     public Ball(Point3D pos, Vector3D vel) {
