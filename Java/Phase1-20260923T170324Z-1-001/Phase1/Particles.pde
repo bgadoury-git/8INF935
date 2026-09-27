@@ -93,39 +93,39 @@ class Particle {
     }
     
     // --- NEW EULER INTEGRATION ---
-    void integrateEuler(float t) {
+    void integrateEuler(float deltaTime) {
         if (m_inverseMass <= 0.0f) return;
         Vector3D a = computeAcceleration();
 
         // p <- p + v*t (In-place to avoid GC)
-        m_position.setX(m_position.getX() + m_velocity.getX() * t);
-        m_position.setY(m_position.getY() + m_velocity.getY() * t);
-        m_position.setZ(m_position.getZ() + m_velocity.getZ() * t);
+        m_position.setX(m_position.getX() + m_velocity.getX() * deltaTime);
+        m_position.setY(m_position.getY() + m_velocity.getY() * deltaTime);
+        m_position.setZ(m_position.getZ() + m_velocity.getZ() * deltaTime);
 
         // v <- v + a*t
-        m_velocity.setX(m_velocity.getX() + a.getX() * t);
-        m_velocity.setY(m_velocity.getY() + a.getY() * t);
-        m_velocity.setZ(m_velocity.getZ() + a.getZ() * t);
+        m_velocity.setX(m_velocity.getX() + a.getX() * deltaTime);
+        m_velocity.setY(m_velocity.getY() + a.getY() * deltaTime);
+        m_velocity.setZ(m_velocity.getZ() + a.getZ() * deltaTime);
 
         // v <- v * d^t (frame-rate independent damping)
-        float factor = (float)Math.pow(m_linearDamping, t);
+        float factor = (float)Math.pow(m_linearDamping, deltaTime);
         m_velocity.setX(m_velocity.getX() * factor);
         m_velocity.setY(m_velocity.getY() * factor);
         m_velocity.setZ(m_velocity.getZ() * factor);
     }
 
     // --- NEW POSITION VERLET INTEGRATION ---
-    void integrateVerlet(float t) {
+    void integrateVerlet(float deltaTime) {
         if (m_inverseMass <= 0.0f) return;
         Vector3D a = computeAcceleration();
-        float factor = (float)Math.pow(m_linearDamping, t);
+        float factor = (float)Math.pow(m_linearDamping, deltaTime);
         
         float dispX, dispY, dispZ;
 
         if (m_firstVerletStep) {
-            dispX = m_velocity.getX() * t * factor;
-            dispY = m_velocity.getY() * t * factor;
-            dispZ = m_velocity.getZ() * t * factor;
+            dispX = m_velocity.getX() * deltaTime * factor;
+            dispY = m_velocity.getY() * deltaTime * factor;
+            dispZ = m_velocity.getZ() * deltaTime * factor;
             a = new Vector3D(a.getX() * 0.5f, a.getY() * 0.5f, a.getZ() * 0.5f);
             m_firstVerletStep = false;
         } else {
@@ -136,14 +136,14 @@ class Particle {
 
         m_previousPosition = new Point3D(m_position.getX(), m_position.getY(), m_position.getZ());
 
-        float tSq = t * t;
+        float tSq = deltaTime * deltaTime;
         m_position.setX(m_position.getX() + dispX + a.getX() * tSq);
         m_position.setY(m_position.getY() + dispY + a.getY() * tSq);
         m_position.setZ(m_position.getZ() + dispZ + a.getZ() * tSq);
 
-        m_velocity.setX((m_position.getX() - m_previousPosition.getX()) / t);
-        m_velocity.setY((m_position.getY() - m_previousPosition.getY()) / t);
-        m_velocity.setZ((m_position.getZ() - m_previousPosition.getZ()) / t);
+        m_velocity.setX((m_position.getX() - m_previousPosition.getX()) / deltaTime);
+        m_velocity.setY((m_position.getY() - m_previousPosition.getY()) / deltaTime);
+        m_velocity.setZ((m_position.getZ() - m_previousPosition.getZ()) / deltaTime);
     }
 
     // --- NEW MASTER INTEGRATION ROUTER ---

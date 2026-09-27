@@ -15,14 +15,14 @@ final int neededGoal = 10;
 ArrayList<Particle> particles = new ArrayList<Particle>();
 
 // Contiguous Swap-and-Pop Pool
-final int MAX_CONFETTI_POOL = 2000000;
+final int MAX_CONFETTI_POOL = 10000000;
 Confetti[] Confettis = new Confetti[MAX_CONFETTI_POOL];
 int activeConfetti = 0;
 float confettiSpawnAccumulator = 0.0f;
 int confettiRecycleCursor = 0;
 
 AimMode currentAimMode = AimMode.TurretSpherical;
-IntegrationMode currentIntegrationMode = IntegrationMode.VelocityVerlet;
+IntegrationMode currentIntegrationMode = IntegrationMode.PositionVerlet;
 SelectedProjectile currentProjectile = SelectedProjectile.Bullet;
 boolean showTrajectories = false;
 
