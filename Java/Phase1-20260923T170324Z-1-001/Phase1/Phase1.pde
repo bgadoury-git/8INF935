@@ -22,6 +22,7 @@ float confettiSpawnAccumulator = 0.0f;
 int confettiRecycleCursor = 0;
 
 AimMode currentAimMode = AimMode.TurretSpherical;
+IntegrationMode currentIntegrationMode = IntegrationMode.VelocityVerlet;
 SelectedProjectile currentProjectile = SelectedProjectile.Bullet;
 boolean showTrajectories = false;
 
@@ -242,6 +243,10 @@ public void keyPressed() {
         if (key == 'b' || key == 'B') {
             cullConfettis = !cullConfettis;
         }
+        if (key == 'i' || key == 'I') {
+            int nextMode = (currentIntegrationMode.ordinal() + 1) % IntegrationMode.values().length;
+            currentIntegrationMode = IntegrationMode.values()[nextMode];
+        }
     }
 }
 
@@ -303,7 +308,7 @@ void updateParticles(float timestep) {
     Iterator<Particle> it = particles.iterator();
     while (it.hasNext()) {
         Particle particle = it.next();
-        particle.applyVerletIntegration(timestep);
+        particle.integrate(timestep, currentIntegrationMode);
 
         Point3D pos = particle.getPosition();
 
@@ -312,10 +317,10 @@ void updateParticles(float timestep) {
         }
     }
 
-    // 2. Parallel Confetti Verlet Integration (OpenMP equivalent)
+    // 2. Parallel Confetti Integration (OpenMP equivalent)
     int count = activeConfetti;
     IntStream.range(0, count).parallel().forEach(i -> {
-        Confettis[i].applyVerletIntegration(timestep);
+        Confettis[i].integrate(timestep, currentIntegrationMode);
     });
 
     // 3. Sequential Culling pass
@@ -337,6 +342,8 @@ class RGBColor {
 }
 
 void RenderParticles() {
+  
+    //draw confetti fountain
     final float tailTime = 0.035f;
     final int count = activeConfetti;
 
@@ -438,6 +445,7 @@ void RenderParticles() {
         }
     }
     
+    //draw player projectiles
     for (Particle particle : particles) {
         particle.draw();
         if (showTrajectories) {
@@ -533,6 +541,7 @@ void renderSidePanel() {
     String projectileText = projectileFactory.getDisplayName(currentProjectile);
 
     String[] controlLines = {
+        "Integration [I]: " + currentIntegrationMode.name(),
         "Aim Mode [M]: " + modeText,
         "Projectile [Scroll]: " + projectileText,
         "Trajectories [T]: " + (showTrajectories ? "ON" : "OFF"),
