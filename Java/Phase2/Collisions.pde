@@ -79,8 +79,7 @@ void resolveCollisionsAndConstraints(float dt) {
                 float gravityVelocity = PhysicsConstants.GRAVITY * dt;
                 
                 // If the relative velocity is less than or equal to what gravity produces in one frame 
-                // (multiplied by a small tolerance factor to catch floating-point error), treat as resting.
-                if (Math.abs(vRelDotN) <= gravityVelocity * 2.0f) {
+                if (Math.abs(vRelDotN) <= gravityVelocity) {
                     e = 0.0f; // Force perfectly inelastic collision (no bounce)
                 }
                 
