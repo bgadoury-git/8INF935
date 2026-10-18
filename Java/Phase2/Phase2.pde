@@ -9,9 +9,11 @@ enum GameState {
 }
 
 GameState currentState = GameState.Menu;
+Vector3D currentCamDir = new Vector3D(0.0f, 0.0f, 1.0f);
 
 // --- Gameplay State ---
 ArrayList<Particle> particles = new ArrayList<Particle>();
+ArrayList<Cable> cables = new ArrayList<Cable>();
 
 IntegrationMode currentIntegrationMode = IntegrationMode.PositionVerlet;
 
@@ -65,6 +67,7 @@ Earth earth;
 
 void resetGame() {
     particles.clear();
+    cables.clear();
     totalTime = 0;
     currentState = GameState.Playing;
     
@@ -73,12 +76,45 @@ void resetGame() {
     
     // Position Bot at origin
     player = new SpaceSphere(
-        new Point3D(0.0f, 100.0f, 0.0f), 
-        new Vector3D(0.0f, 0.0f, 50.0f)
+        new Point3D(0.0f, 2.0f, 0.0f), 
+        new Vector3D(0.0f, 20.0f, 20.0f)
+    );
+    
+    SmallSphere entity1 = new SmallSphere(
+        new Point3D(0.0f, 1.0f, 0.0f),
+        new Vector3D(0.0f, 0.0f, 0.0f)
+    );
+    
+       SmallSphere entity2 = new SmallSphere(
+        new Point3D(-1.0f, 1.0f, 2.0f),
+        new Vector3D(0.0f, 0.0f, 0.0f)
+    );
+    
+       SmallSphere entity3 = new SmallSphere(
+        new Point3D(0.0f, 1.0f, 2.0f),
+        new Vector3D(0.0f, 0.0f, 0.0f)
+    );
+    
+       SmallSphere entity4 = new SmallSphere(
+        new Point3D(1.0f, 1.0f, 2.0f),
+        new Vector3D(0.0f, 0.0f, 0.0f)
     );
     
     particles.add(earth);
     particles.add(player);
+    particles.add(entity1);
+    particles.add(entity2);
+    particles.add(entity3);
+    particles.add(entity4);
+    
+    Cable cable = new Cable(player, entity1, 5);
+    Cable cable2 = new Cable(entity1, entity2, 5);
+    Cable cable3 = new Cable(entity1, entity3, 5);
+    Cable cable4 = new Cable(entity1, entity4, 5);
+    cables.add(cable);
+    cables.add(cable2);
+    cables.add(cable3);
+    cables.add(cable4);
 }
 // ==========================================
 // Render Functions
@@ -110,6 +146,9 @@ void drawGameplay() {
 
     while (accumulator >= PhysicsConstants.FIXED_TIMESTEP) {
         updateParticles(PhysicsConstants.FIXED_TIMESTEP);
+        
+        resolveCollisionsAndConstraints(PhysicsConstants.FIXED_TIMESTEP);
+        
         accumulator -= PhysicsConstants.FIXED_TIMESTEP;
     }
 
@@ -120,21 +159,23 @@ void drawGameplay() {
         Point3D pos = player.getPosition();
         Vector3D vel = player.getVelocity();
         
-        Vector3D dir = vel.normalized();
-        if (dir.length() == 0.0f) {
-            dir = new Vector3D(0.0f, 0.0f, 1.0f); 
+        // Flatten velocity to prevent the camera from pitching wildly up/down
+        Vector3D flatVel = new Vector3D(vel.getX(), 0.0f, vel.getZ());
+        
+        // Only update the camera direction if the ball is actually moving horizontally
+        if (flatVel.lengthSquared() > 0.01f) {
+            currentCamDir = flatVel.normalized();
         }
         
-        // Position camera 10m behind and 4m ABOVE (+Y) the sphere
-        float distanceBehind = 10.0f;
-        float heightAbove = 4.0f; // Positive Y is now visually Up
+        float distanceBehind = 20.0f;
+        float heightAbove = 8.0f; 
         
         camera(
-            pos.getX() - dir.getX() * distanceBehind, 
+            pos.getX() - currentCamDir.getX() * distanceBehind, 
             pos.getY() + heightAbove, 
-            pos.getZ() - dir.getZ() * distanceBehind, // Eye Position
-            pos.getX(), pos.getY(), pos.getZ(),       // Target Position
-            0.0f, -1.0f, 0.0f                         // Up Vector is now flipped!
+            pos.getZ() - currentCamDir.getZ() * distanceBehind, // Eye Position
+            pos.getX(), pos.getY(), pos.getZ(),                 // Target Position
+            0.0f, -1.0f, 0.0f                                   // Up Vector
         );
         
         perspective(PI/3.0f, (float)width/height, 0.1f, 10000.0f);
@@ -143,7 +184,14 @@ void drawGameplay() {
     // 3. RENDER EVERYTHING
     arena.draw(this); 
     RenderParticles();
+    RenderCables();
     renderHUD();
+}
+
+void RenderCables() {
+    for (Cable cable : cables) {
+        cable.draw();
+    }
 }
 
 void drawGameOverScreen() {

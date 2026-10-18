@@ -1,17 +1,3 @@
-class Ball extends Particle {
-    public static final float baseSpeed = 150.0f;
-    public static final boolean defaultGravityState = true;
-
-    public Ball(Point3D pos, Vector3D vel) {
-        super(pos, vel, new Vector3D(), 1.0f, 0.999f, defaultGravityState);
-    }
-
-    @Override
-    void draw() {
-        //draw whatever
-    }
-}
-
 class Earth extends Particle {
     public final float radius = 6371000.0f; // 6,371 km radius
 
@@ -20,6 +6,9 @@ class Earth extends Particle {
         super(pos, new Vector3D(), new Vector3D(), 0.0f, 1.0f, false);
         setInverseMass(0.0f); // Explicitly ensure it remains immovable[cite: 3]
     }
+    
+    @Override
+    float getRadius() { return radius; }
 
     @Override
     void draw() {
@@ -35,6 +24,9 @@ class SpaceSphere extends Particle {
         // mass = 20.0f, damping = 1.0f, gravity = false
         super(pos, vel, new Vector3D(), 20.0f, 1.0f, true);
     }
+    
+    @Override
+    float getRadius() { return radius; }
 
     @Override
     void draw() {
@@ -42,6 +34,31 @@ class SpaceSphere extends Particle {
         translate(getPosition().getX(), getPosition().getY(), getPosition().getZ());
         
         fill(255, 50, 50);
+        noStroke();
+        sphereDetail(16);
+        sphere(radius);
+        
+        popMatrix();
+    }
+}
+
+class SmallSphere extends Particle {
+    float radius = 0.5f;
+
+    public SmallSphere(Point3D pos, Vector3D vel) {
+        // mass = 20.0f, damping = 1.0f, gravity = false
+        super(pos, vel, new Vector3D(), 20.0f, 1.0f, true);
+    }
+    
+    @Override
+    float getRadius() { return radius; }
+
+    @Override
+    void draw() {
+        pushMatrix();
+        translate(getPosition().getX(), getPosition().getY(), getPosition().getZ());
+        
+        fill(0, 50, 50);
         noStroke();
         sphereDetail(16);
         sphere(radius);

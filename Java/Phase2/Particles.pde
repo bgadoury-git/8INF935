@@ -47,7 +47,15 @@ class Particle {
     void setPosition(Point3D newPosition) { m_position = newPosition; }
     
     Vector3D getVelocity() { return m_velocity; }
-    void setVelocity(Vector3D newVelocity) { m_velocity = newVelocity; }
+    void setVelocity(Vector3D newVelocity) {
+    m_velocity = newVelocity; 
+    // Force Position Verlet to respect sudden velocity changes from collisions
+    if (m_previousPosition != null && m_position != null) {
+              m_previousPosition.setX(m_position.getX() - newVelocity.getX() * PhysicsConstants.FIXED_TIMESTEP);
+              m_previousPosition.setY(m_position.getY() - newVelocity.getY() * PhysicsConstants.FIXED_TIMESTEP);
+              m_previousPosition.setZ(m_position.getZ() - newVelocity.getZ() * PhysicsConstants.FIXED_TIMESTEP);
+          }
+      }
     
     Vector3D getAcceleration() { return m_acceleration; }
     void setAcceleration(Vector3D newAcceleration) { m_acceleration = newAcceleration; }
@@ -157,5 +165,17 @@ class Particle {
 
     void draw() {
         println("Drawing Particle at position: " + m_position);
+    }
+    
+    float getRadius() {
+        return 1.0f; 
+    }
+    
+    // Move the particle without generating phantom Verlet velocity
+    void moveSilently(Vector3D offset) {
+        m_position = m_position.add(offset);
+        if (m_previousPosition != null) {
+            m_previousPosition = m_previousPosition.add(offset);
+        }
     }
 }
