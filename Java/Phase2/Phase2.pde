@@ -60,12 +60,26 @@ public void draw() {
 // Lifecycle & State Transitions
 // ==========================================
 
+SpaceSphere player;
+Earth earth;
+
 void resetGame() {
     particles.clear();
     totalTime = 0;
     currentState = GameState.Playing;
+    
+    // Position Earth massively BELOW the origin (-Y direction)
+    earth = new Earth(new Point3D(0.0f, -6371000.0f, 0.0f)); 
+    
+    // Position Bot at origin
+    player = new SpaceSphere(
+        new Point3D(0.0f, 100.0f, 0.0f), 
+        new Vector3D(0.0f, 0.0f, 50.0f)
+    );
+    
+    particles.add(earth);
+    particles.add(player);
 }
-
 // ==========================================
 // Render Functions
 // ==========================================
@@ -90,11 +104,8 @@ void drawMenuScreen() {
 }
 
 void drawGameplay() {
-    arena.setupLighting(this);
-    arena.draw(this);
-    // Clamp frame time to handle hitches/breakpoints
+    // 1. RUN PHYSICS FIRST
     float frameTime = min(customDeltaTime, PhysicsConstants.MAX_FRAME_TIME);
-
     accumulator += frameTime;
 
     while (accumulator >= PhysicsConstants.FIXED_TIMESTEP) {
@@ -102,13 +113,37 @@ void drawGameplay() {
         accumulator -= PhysicsConstants.FIXED_TIMESTEP;
     }
 
+    // 2. SETUP LIGHTING AND CAMERA
+    arena.setupLighting(this);
+    
+    if (player != null) {
+        Point3D pos = player.getPosition();
+        Vector3D vel = player.getVelocity();
+        
+        Vector3D dir = vel.normalized();
+        if (dir.length() == 0.0f) {
+            dir = new Vector3D(0.0f, 0.0f, 1.0f); 
+        }
+        
+        // Position camera 10m behind and 4m ABOVE (+Y) the sphere
+        float distanceBehind = 10.0f;
+        float heightAbove = 4.0f; // Positive Y is now visually Up
+        
+        camera(
+            pos.getX() - dir.getX() * distanceBehind, 
+            pos.getY() + heightAbove, 
+            pos.getZ() - dir.getZ() * distanceBehind, // Eye Position
+            pos.getX(), pos.getY(), pos.getZ(),       // Target Position
+            0.0f, -1.0f, 0.0f                         // Up Vector is now flipped!
+        );
+        
+        perspective(PI/3.0f, (float)width/height, 0.1f, 10000.0f);
+    }
+
+    // 3. RENDER EVERYTHING
+    arena.draw(this); 
     RenderParticles();
     renderHUD();
-
-    // Game over trigger check
-    if (true) {
-
-    }
 }
 
 void drawGameOverScreen() {
