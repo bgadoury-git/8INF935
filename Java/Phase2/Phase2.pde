@@ -76,15 +76,23 @@ void resetGame() {
     
     // Position Bot at origin
     player = new SpaceSphere(
-        new Point3D(0.0f, 2.0f, 0.0f), 
-        new Vector3D(0.0f, 20.0f, 20.0f)
+        new Point3D(0.0f, 1.0f, 0.0f), 
+        new Vector3D(0.0f, 0.0f, 0.0f)
     );
-    
-    SmallSphere entity1 = new SmallSphere(
+    /*
+        SmallSphere entity1 = new SmallSphere(
         new Point3D(0.0f, 1.0f, 0.0f),
         new Vector3D(0.0f, 0.0f, 0.0f)
     );
+    */
     
+    SpaceSphere BonceBall = new SpaceSphere(
+        new Point3D(0.0f, 10.0f, 0.0f), 
+        new Vector3D(0.0f, 0.0f, 0.0f)
+    );
+    
+    BonceBall.setMaterial(Material.RUBBER);
+/*
        SmallSphere entity2 = new SmallSphere(
         new Point3D(-1.0f, 1.0f, 2.0f),
         new Vector3D(0.0f, 0.0f, 0.0f)
@@ -98,15 +106,16 @@ void resetGame() {
        SmallSphere entity4 = new SmallSphere(
         new Point3D(1.0f, 1.0f, 2.0f),
         new Vector3D(0.0f, 0.0f, 0.0f)
-    );
+    );*/
     
     particles.add(earth);
     particles.add(player);
-    particles.add(entity1);
+    /*particles.add(entity1);
     particles.add(entity2);
     particles.add(entity3);
-    particles.add(entity4);
-    
+    particles.add(entity4);*/
+    particles.add(BonceBall);
+   /* 
     Cable cable = new Cable(player, entity1, 5);
     Cable cable2 = new Cable(entity1, entity2, 5);
     Cable cable3 = new Cable(entity1, entity3, 5);
@@ -114,7 +123,7 @@ void resetGame() {
     cables.add(cable);
     cables.add(cable2);
     cables.add(cable3);
-    cables.add(cable4);
+    cables.add(cable4);*/
 }
 // ==========================================
 // Render Functions

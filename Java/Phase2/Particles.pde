@@ -17,6 +17,8 @@ class Particle {
     // --- NEW STATE FOR POSITION VERLET ---
     private Point3D m_previousPosition;
     private boolean m_firstVerletStep = true;
+    
+    private Material m_material = Material.STEEL;
 
     Vector3D computeAcceleration() {
         if (m_inverseMass <= 0.0f) {
@@ -73,6 +75,9 @@ class Particle {
     
     boolean getAffectedByGravity() { return m_affectedByGravity; }
     void setAffectedByGravity(boolean affected) { m_affectedByGravity = affected; }
+    
+    Material getMaterial() { return m_material; }
+    void setMaterial(Material material) { m_material = material; }
 
     void applyVerletIntegration(float deltaTime) {
         if (m_inverseMass <= 0.0f) return;

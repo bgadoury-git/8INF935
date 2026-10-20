@@ -2,9 +2,10 @@ class Earth extends Particle {
     public final float radius = 6371000.0f; // 6,371 km radius
 
     public Earth(Point3D pos) {
-        // mass = 0.0f (results in inverseMass = 0), damping = 1.0f, gravity = false[cite: 3]
+        // mass = 0.0f (results in inverseMass = 0), damping = 1.0f, gravity = false
         super(pos, new Vector3D(), new Vector3D(), 0.0f, 1.0f, false);
-        setInverseMass(0.0f); // Explicitly ensure it remains immovable[cite: 3]
+        setInverseMass(0.0f); // Explicitly ensure it remains immovable
+        setMaterial(Material.EARTH);
     }
     
     @Override
