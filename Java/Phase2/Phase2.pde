@@ -17,6 +17,14 @@ ArrayList<Cable> cables = new ArrayList<Cable>();
 
 IntegrationMode currentIntegrationMode = IntegrationMode.PositionVerlet;
 
+// --- Forces ---
+ForceRegistry forceRegistry = new ForceRegistry();
+
+// --- Friction (demo) ---
+ArrayList<FrictionGenerator> frictionGenerators = new ArrayList<FrictionGenerator>();
+CoulombFrictionGenerator playerGroundFriction; // gardee pour afficher l'etat dans le HUD
+boolean frictionEnabled = true;
+
 float totalTime = 0;
 float accumulator = 0;
 
@@ -107,6 +115,8 @@ void resetGame() {
     particles.add(entity3);
     particles.add(entity4);
     
+    setupFriction();
+
     Cable cable = new Cable(player, entity1, 5);
     Cable cable2 = new Cable(entity1, entity2, 5);
     Cable cable3 = new Cable(entity1, entity3, 5);
@@ -116,6 +126,44 @@ void resetGame() {
     cables.add(cable3);
     cables.add(cable4);
 }
+// Enregistre les generateurs de friction pour toutes les particules mobiles.
+//  - Trainee de l'air (partagee, sans etat) : k1 = 0.1, k2 = 0.02
+//  - Friction de Coulomb sur la Terre (un generateur par particule, car il
+//    garde en memoire son etat statique/glissant) : mu_s = 0.6, mu_k = 0.4
+void setupFriction() {
+    forceRegistry.clear();
+    frictionGenerators.clear();
+    //Pas de table des coefficient, codé en dur ici (eau, air).
+    DragForceGenerator airDrag = new DragForceGenerator(0.1f, 0.02f);
+    frictionGenerators.add(airDrag);
+
+    for (Particle p : particles) {
+        if (p.getInverseMass() <= 0.0f) continue; // la Terre ne bouge pas
+
+        forceRegistry.add(p, airDrag);
+
+        //Pas de table des coefficient, codé en dur ici (terre).
+        CoulombFrictionGenerator groundFriction =
+            new CoulombFrictionGenerator(new SphericalSurface(earth), 0.6f, 0.4f);
+        frictionGenerators.add(groundFriction);
+        forceRegistry.add(p, groundFriction);
+
+        if (p == player) playerGroundFriction = groundFriction;
+    }
+
+    // Respecte l'etat de la touche [F] meme apres une relance
+    for (FrictionGenerator g : frictionGenerators) {
+        g.setEnabled(frictionEnabled);
+    }
+}
+
+void toggleFriction() {
+    frictionEnabled = !frictionEnabled;
+    for (FrictionGenerator g : frictionGenerators) {
+        g.setEnabled(frictionEnabled);
+    }
+}
+
 // ==========================================
 // Render Functions
 // ==========================================
@@ -245,7 +293,11 @@ public void keyPressed() {
     }
 
     if (currentState == GameState.Playing) {
-      
+        if (key == 'f' || key == 'F') {
+            toggleFriction();
+        } else if (key == 'r' || key == 'R') {
+            resetGame();
+        }
     }
 }
 
@@ -277,8 +329,11 @@ void reset2DContext() {
 
 
 void updateParticles(float timestep) {
+    forceRegistry.updateForces(timestep);
+
     for (Particle particle : particles) {
        particle.integrate(timestep, currentIntegrationMode);
+       particle.clearForceAccumulator();
     }  
 }
 
@@ -328,11 +383,15 @@ void renderSidePanel() {
     String[] statLines = {
         "FPS: " + Math.round(customFPS) + "   ms/frame: " + Math.round(smoothedDeltaTime * 1000.0f),
         "Particle instances: " + formatWithCommas(totalCount),
+        "Player speed: " + nf(player != null ? player.getVelocity().length() : 0.0f, 0, 2) + " m/s",
+        "Player contact: " + (playerGroundFriction != null ? playerGroundFriction.getState().name() : "-"),
     };
 
 
     String[] controlLines = {
         "Integration [I]: " + currentIntegrationMode.name(),
+        "Friction [F]: " + (frictionEnabled ? "ON" : "OFF"),
+        "Relaunch [R]",
         "End screen [G]"
     };
 
