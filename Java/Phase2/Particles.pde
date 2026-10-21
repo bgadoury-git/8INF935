@@ -20,11 +20,29 @@ class Particle {
     
     private Material m_material = Material.STEEL;
 
+    private Vector3D m_forceAccum = new Vector3D();
+
+    void addForce(Vector3D force) {
+        m_forceAccum.setX(m_forceAccum.getX() + force.getX());
+        m_forceAccum.setY(m_forceAccum.getY() + force.getY());
+        m_forceAccum.setZ(m_forceAccum.getZ() + force.getZ());
+    }
+
+    void clearAccumulator() {
+        m_forceAccum.setX(0.0f);
+        m_forceAccum.setY(0.0f);
+        m_forceAccum.setZ(0.0f);
+    }
+
+    Vector3D getForceAccumulator() { return m_forceAccum; }
+
+    boolean hasFiniteMass() { return m_inverseMass > 0.0f; }
+
     Vector3D computeAcceleration() {
         if (m_inverseMass <= 0.0f) {
             return new Vector3D();
         }
-        return m_acceleration;
+        return m_acceleration.add(m_forceAccum.mult(m_inverseMass));
     }
 
     public Particle() {
@@ -82,19 +100,21 @@ class Particle {
     void applyVerletIntegration(float deltaTime) {
         if (m_inverseMass <= 0.0f) return;
 
+        Vector3D a = computeAcceleration();
+
         // 1. Drift (In-place mutation to avoid heap allocation)
         float halfDtSq = 0.5f * deltaTime * deltaTime;
-        m_position.setX(m_position.getX() + m_velocity.getX() * deltaTime + m_acceleration.getX() * halfDtSq);
-        m_position.setY(m_position.getY() + m_velocity.getY() * deltaTime + m_acceleration.getY() * halfDtSq);
-        m_position.setZ(m_position.getZ() + m_velocity.getZ() * deltaTime + m_acceleration.getZ() * halfDtSq);
+        m_position.setX(m_position.getX() + m_velocity.getX() * deltaTime + a.getX() * halfDtSq);
+        m_position.setY(m_position.getY() + m_velocity.getY() * deltaTime + a.getY() * halfDtSq);
+        m_position.setZ(m_position.getZ() + m_velocity.getZ() * deltaTime + a.getZ() * halfDtSq);
 
         Vector3D newAcceleration = computeAcceleration(); 
 
         // 2. Kick
         float halfDt = 0.5f * deltaTime;
-        m_velocity.setX(m_velocity.getX() + (m_acceleration.getX() + newAcceleration.getX()) * halfDt);
-        m_velocity.setY(m_velocity.getY() + (m_acceleration.getY() + newAcceleration.getY()) * halfDt);
-        m_velocity.setZ(m_velocity.getZ() + (m_acceleration.getZ() + newAcceleration.getZ()) * halfDt);
+        m_velocity.setX(m_velocity.getX() + (a.getX() + newAcceleration.getX()) * halfDt);
+        m_velocity.setY(m_velocity.getY() + (a.getY() + newAcceleration.getY()) * halfDt);
+        m_velocity.setZ(m_velocity.getZ() + (a.getZ() + newAcceleration.getZ()) * halfDt);
 
         // 3. Time-corrected damping
         float dampingFactor = (float)Math.pow(m_linearDamping, deltaTime);
@@ -166,6 +186,7 @@ class Particle {
             case Euler:          integrateEuler(t); break;
             case PositionVerlet: integrateVerlet(t); break;
         }
+        clearAccumulator();
     }
 
     void draw() {

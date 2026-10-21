@@ -14,6 +14,7 @@ Vector3D currentCamDir = new Vector3D(0.0f, 0.0f, 1.0f);
 // --- Gameplay State ---
 ArrayList<Particle> particles = new ArrayList<Particle>();
 ArrayList<Cable> cables = new ArrayList<Cable>();
+ParticleForceRegistry forceRegistry = new ParticleForceRegistry();  
 
 IntegrationMode currentIntegrationMode = IntegrationMode.PositionVerlet;
 
@@ -68,6 +69,8 @@ Earth earth;
 void resetGame() {
     particles.clear();
     cables.clear();
+    forceRegistry.clear();
+    clearActiveForces();
     totalTime = 0;
     currentState = GameState.Playing;
     
@@ -194,6 +197,7 @@ void drawGameplay() {
     arena.draw(this); 
     RenderParticles();
     RenderCables();
+    drawActiveForces();
     renderHUD();
 }
 
@@ -286,6 +290,7 @@ void reset2DContext() {
 
 
 void updateParticles(float timestep) {
+    applyForces(forceRegistry, timestep);  
     for (Particle particle : particles) {
        particle.integrate(timestep, currentIntegrationMode);
     }  
