@@ -9,6 +9,7 @@ class Tests {
         testVector3D();
         testPolar();
         testParticle();
+        testSprings(); 
     }
 
     // --- Vector3D Tests ---
@@ -146,6 +147,123 @@ class Tests {
         passed &= expect(noMass.getPosition().equals(new Point3D(10,20,30)), "Particle Zero Mass (Infinite Mass)");
         
         if (passed) println("Particle: All tests passed!");
+    }
+
+  // --- Spring Tests ---
+    boolean near(float a, float b) { return Math.abs(a - b) < 1e-3f; }
+
+    Particle springTestParticle(float x, float y, float z) {
+        return new Particle(new Point3D(x, y, z), new Vector3D(), new Vector3D(), 2.0f, 1.0f, false);
+    }
+
+    void testSprings() {
+        boolean passed = true;
+
+        Particle a = springTestParticle(0, 0, 0);
+        Particle b = springTestParticle(3, 0, 0);
+        ParticleSpring s = new ParticleSpring(b, 10.0f, 2.0f);
+        s.updateForce(a, 0.016f);
+        passed &= expect(near(a.getForceAccumulator().getX(), 10.0f), "Spring stretched pulls toward other end");
+        a.clearAccumulator();
+
+        b.setPosition(new Point3D(1, 0, 0));
+        s.updateForce(a, 0.016f);
+        passed &= expect(near(a.getForceAccumulator().getX(), -10.0f), "Spring compressed pushes away");
+        a.clearAccumulator();
+
+        s.elasticLimit = 4.0f;
+        b.setPosition(new Point3D(4, 0, 0));
+        s.updateForce(a, 0.016f);
+        passed &= expect(near(a.getForceAccumulator().getX(), 20.0f), "Spring active up to elastic limit");
+        a.clearAccumulator();
+        b.setPosition(new Point3D(10, 0, 0));
+        s.updateForce(a, 0.016f);
+        passed &= expect(s.isBeyondElasticLimit(a), "Spring detects elastic limit");
+        passed &= expect(a.getForceAccumulator().lengthSquared() == 0.0f, "Beyond elastic limit: no spring force (cable)");
+        a.clearAccumulator();
+
+        ArrayList<ForceBinding> savedForces = new ArrayList<ForceBinding>(activeForces);
+        activeForces.clear();
+        Particle la = springTestParticle(0, 0, 0);
+        Particle lb = springTestParticle(10, 0, 0);
+        ElasticLink link = new ElasticLink(la, lb, 10.0f, 2.0f, 4.0f);
+        passed &= expect(activeForces.size() == 2, "Elastic link: one force per particle");
+        ArrayList<Particle> savedParticles = new ArrayList<Particle>(particles);
+        particles.clear(); // on isole le test des particules du jeu
+        resolveCollisionsAndConstraints(1.0f / 60.0f);
+        particles.addAll(savedParticles);
+        passed &= expect(near(link.length(), 4.0f), "Elastic link behaves like a cable beyond its limit");
+        link.breakLink();
+        passed &= expect(activeForces.size() == 0 && !cables.contains(link.cable), "Elastic link can be broken");
+
+        Particle e = springTestParticle(0, -5, 0);
+        new ParticleAnchoredSpring(new Point3D(0, 0, 0), 4.0f, 3.0f).updateForce(e, 0.016f);
+        passed &= expect(near(e.getForceAccumulator().getY(), 8.0f), "Anchored spring pulls toward anchor");
+
+        Particle f = springTestParticle(0, 0, 0);
+        Particle g = springTestParticle(1, 0, 0);
+        ParticleBungee bungee = new ParticleBungee(g, 10.0f, 2.0f);
+        bungee.updateForce(f, 0.016f);
+        passed &= expect(f.getForceAccumulator().lengthSquared() == 0.0f, "Bungee slack gives no force");
+        g.setPosition(new Point3D(5, 0, 0));
+        bungee.updateForce(f, 0.016f);
+        passed &= expect(near(f.getForceAccumulator().getX(), 30.0f), "Bungee taut pulls");
+
+        Particle h = springTestParticle(0, 1, 0);
+        new ParticleAnchoredBungee(new Point3D(0, 0, 0), 10.0f, 2.0f).updateForce(h, 0.016f);
+        passed &= expect(h.getForceAccumulator().lengthSquared() == 0.0f, "Anchored bungee slack gives no force");
+
+        ParticleBuoyancy buoy = new ParticleBuoyancy(0.5f, 0.001f, 0.0f);
+        Particle above = springTestParticle(0, 2, 0);
+        Particle half = springTestParticle(0, 0, 0);
+        Particle under = springTestParticle(0, -2, 0);
+        buoy.updateForce(above, 0.016f);
+        buoy.updateForce(half, 0.016f);
+        buoy.updateForce(under, 0.016f);
+        float full = 1000.0f * 0.001f * PhysicsConstants.GRAVITY;
+        passed &= expect(above.getForceAccumulator().lengthSquared() == 0.0f, "Buoyancy out of water");
+        passed &= expect(near(half.getForceAccumulator().getY(), full * 0.5f), "Buoyancy half submerged");
+        passed &= expect(near(under.getForceAccumulator().getY(), full), "Buoyancy fully submerged");
+
+        float dt = 1.0f / 60.0f;
+        float k = 800.0f, mass = 2.0f;
+        float w0 = (float)Math.sqrt(k / mass);                   // ω0 = 20 rad/s
+        Vector3D xs = dampedHarmonicPosition(new Vector3D(1, 0, 0), new Vector3D(), k, 0.0f, mass, 0.1f);
+        passed &= expect(near(xs.getX(), (float)Math.cos(w0 * 0.1f)), "Undamped SHM: x(t) = A cos(w0 t)");
+        float zeta = 0.5f, c = zeta * 2.0f * (float)Math.sqrt(mass * k);
+        float wd = w0 * (float)Math.sqrt(1 - zeta * zeta);
+        float expectedUnder = (float)((Math.cos(wd * 0.1) + (zeta * w0 / wd) * Math.sin(wd * 0.1)) * Math.exp(-zeta * w0 * 0.1));
+        xs = dampedHarmonicPosition(new Vector3D(1, 0, 0), new Vector3D(), k, c, mass, 0.1f);
+        passed &= expect(near(xs.getX(), expectedUnder), "Underdamped SHM formula");
+        c = 2.0f * (float)Math.sqrt(mass * k);
+        xs = dampedHarmonicPosition(new Vector3D(1, 0, 0), new Vector3D(), k, c, mass, 0.1f);
+        passed &= expect(near(xs.getX(), (float)((1 + w0 * 0.1) * Math.exp(-w0 * 0.1))), "Critically damped SHM formula");
+        passed &= expect(dampedHarmonicPosition(new Vector3D(1, 0, 0), new Vector3D(), k, 3 * c, mass, 0.1f) == null, "Overdamped not handled");
+
+        // Ressort rigide : après un pas de Verlet, la particule est à x(dt)
+        Particle stiff = new Particle(new Point3D(1, 0, 0), new Vector3D(), new Vector3D(), mass, 1.0f, false);
+        float cStiff = 0.5f * 2.0f * (float)Math.sqrt(mass * k);
+        new ParticleStiffSpring(new Point3D(0, 0, 0), k, cStiff).updateForce(stiff, dt);
+        float expectedStiff = dampedHarmonicPosition(new Vector3D(1, 0, 0), new Vector3D(), k, cStiff, mass, dt).getX();
+        float accelX = stiff.getForceAccumulator().getX() * stiff.getInverseMass();
+        passed &= expect(near(1.0f + accelX * dt * dt, expectedStiff), "Stiff spring follows damped harmonic motion");
+
+        Particle m = springTestParticle(0, 0, 0);
+        Particle n = springTestParticle(4, 0, 0);
+        connectWithSpring(m, n, 10.0f, 2.0f);
+        passed &= expect(activeForces.size() == 2, "connectWithSpring: one force per particle");
+        ParticleForceRegistry reg = new ParticleForceRegistry();
+        applyForces(reg, dt);
+        passed &= expect(reg.size() == 0, "Registry cleared each frame");
+        passed &= expect(near(m.getForceAccumulator().getX(), 20.0f) && near(n.getForceAccumulator().getX(), -20.0f),
+                         "Two-way spring: equal and opposite forces");
+        m.integrate(dt, IntegrationMode.Euler);
+        passed &= expect(m.getForceAccumulator().lengthSquared() == 0.0f, "Accumulator cleared after integration");
+        passed &= expect(m.getVelocity().getX() > 0.0f, "Spring force changes velocity");
+        activeForces.clear();
+        activeForces.addAll(savedForces);
+
+        if (passed) println("Springs: All tests passed!");
     }
 
     boolean expect(boolean condition, String name) {
