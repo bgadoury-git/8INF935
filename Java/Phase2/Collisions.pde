@@ -6,6 +6,7 @@ class Cable {
     Particle p1;
     Particle p2;
     float maxLength;
+    boolean visible;
 
     public Cable(Particle p1, Particle p2, float maxLength) {
         this.p1 = p1;
@@ -14,7 +15,7 @@ class Cable {
     }
     
     void draw() {
-        if (p1 == null || p2 == null) return;
+        if (!visible || p1 == null || p2 == null) return;
         Point3D pos1 = p1.getPosition();
         Point3D pos2 = p2.getPosition();
         
