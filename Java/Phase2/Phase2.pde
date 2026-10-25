@@ -10,10 +10,35 @@ enum GameState {
 
 GameState currentState = GameState.Menu;
 Vector3D currentCamDir = new Vector3D(0.0f, 0.0f, 1.0f);
+Point3D smoothedCamPos = new Point3D(0.0f, 0.0f, 0.0f); // Smooth camera damping
 
 // --- Gameplay State ---
 ArrayList<Particle> particles = new ArrayList<Particle>();
 ArrayList<Cable> cables = new ArrayList<Cable>();
+
+// --- Blob Mechanics State ---
+ArrayList<Particle> blobParticles = new ArrayList<Particle>();
+ArrayList<Particle> loneParticles = new ArrayList<Particle>();
+
+class BlobConnection {
+    Particle parent;
+    Particle child;
+    ElasticLink link;
+    BlobConnection(Particle p, Particle c, ElasticLink l) { 
+        this.parent = p; 
+        this.child = c; 
+        this.link = l; 
+    }
+}
+ArrayList<BlobConnection> activeConnections = new ArrayList<BlobConnection>();
+
+// --- Tuning Constants for Blob ---
+final float ATTACH_DISTANCE = 4.0f;
+final float DETACH_DISTANCE = 5.5f; 
+final float SPRING_K_MAIN = 25.0f;      // Stronger springs for attachments directly to the main blob/player
+final float SPRING_K_SECONDARY = 10.0f; // Weaker springs for secondary internal lattice links
+final float SPRING_REST = 2.0f;
+
 
 // --- System Integrations ---
 ForceRegistry forceRegistry = new ForceRegistry(); 
@@ -99,29 +124,47 @@ void resetGame() {
     forceRegistry.clear();
     drawableForces.clear();
     
+    // Reset Blob State
+    blobParticles.clear();
+    loneParticles.clear();
+    activeConnections.clear();
+    
     totalTime = 0;
     currentState = GameState.Playing;
     
     earth = new Earth(new Point3D(0.0f, -6371000.0f, 0.0f)); 
-    player = new SpaceSphere(new Point3D(0.0f, 2.0f, 0.0f), new Vector3D(0.0f, 20.0f, 20.0f));
-    
-    SmallSphere entity1 = new SmallSphere(new Point3D(0.0f, 1.0f, 0.0f), new Vector3D());
-    SmallSphere entity2 = new SmallSphere(new Point3D(-1.0f, 1.0f, 2.0f), new Vector3D());
-    SmallSphere entity3 = new SmallSphere(new Point3D(0.0f, 1.0f, 2.0f), new Vector3D());
-    SmallSphere entity4 = new SmallSphere(new Point3D(1.0f, 1.0f, 2.0f), new Vector3D());
+    player = new SpaceSphere(new Point3D(0.0f, 2.0f, 0.0f), new Vector3D(0.0f, 0.0f, 0.0f));
+    player.setMaterial(Material.RUBBER);
     
     particles.add(earth);
     particles.add(player);
-    particles.add(entity1);
-    particles.add(entity2);
-    particles.add(entity3);
-    particles.add(entity4);
+    blobParticles.add(player); 
 
-    // Initialize an ElasticLink mapping to test the Springs
-    new ElasticLink(player, entity1, 15.0f, 4.0f, 8.0f);
-    cables.add(new Cable(entity1, entity2, 5));
-    cables.add(new Cable(entity1, entity3, 5));
-    cables.add(new Cable(entity1, entity4, 5));
+    // SCATTER MECHANIC: Increased density and variety (120 pieces, mixed materials and sizes)
+    for (int i = 0; i < 120; i++) {
+        float angle = random(TWO_PI);
+        float dist = random(5.0f, 200.0f);
+        float px = cos(angle) * dist;
+        float pz = sin(angle) * dist;
+        
+        Particle scatteredPart;
+        if (i % 3 == 0) {
+            SpaceSphere ball = new SpaceSphere(new Point3D(px, 1.0f, pz), new Vector3D());
+            ball.setMaterial(Material.RUBBER);
+            scatteredPart = ball;
+        } else if (i % 3 == 1) {
+            SmallSphere sm = new SmallSphere(new Point3D(px, 1.0f, pz), new Vector3D());
+            sm.setMaterial(Material.WOOD);
+            scatteredPart = sm;
+        } else {
+            SmallSphere sm = new SmallSphere(new Point3D(px, 1.0f, pz), new Vector3D());
+            sm.setMaterial(Material.STEEL);
+            scatteredPart = sm;
+        }
+        
+        particles.add(scatteredPart);
+        loneParticles.add(scatteredPart);
+    }
 
     // Register Base Gravity
     for (Particle p : particles) {
@@ -163,6 +206,140 @@ void setupFriction() {
 }
 
 // ==========================================
+// Blob Gameplay Logic (Player Bypass for Max Attachments)
+// ==========================================
+
+boolean areConnected(Particle p1, Particle p2) {
+    if (p1 == p2) return true;
+    for (BlobConnection conn : activeConnections) {
+        if ((conn.parent == p1 && conn.child == p2) || (conn.parent == p2 && conn.child == p1)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+int getConnectionCount(Particle p) {
+    int count = 0;
+    for (BlobConnection conn : activeConnections) {
+        if (conn.parent == p || conn.child == p) {
+            count++;
+        }
+    }
+    return count;
+}
+
+void updateBlobLogic() {
+    // 1. DETACHMENT: Check all active connections for excessive stretch
+    for (int i = activeConnections.size() - 1; i >= 0; i--) {
+        BlobConnection conn = activeConnections.get(i);
+        if (conn.link.length() > DETACH_DISTANCE) {
+            conn.link.breakLink();
+            activeConnections.remove(i);
+            
+            boolean stillConnected = false;
+            for (BlobConnection otherConn : activeConnections) {
+                if (otherConn.parent == conn.child || otherConn.child == conn.child) {
+                    stillConnected = true;
+                    break;
+                }
+            }
+            
+            if (!stillConnected && conn.child != player) {
+                blobParticles.remove(conn.child);
+                if (!loneParticles.contains(conn.child)) {
+                    loneParticles.add(conn.child);
+                }
+            }
+        }
+    }
+
+    // 2. ATTACHMENT & MULTIPLE ATTACHMENTS
+    boolean attachmentFound = true;
+    while (attachmentFound) {
+        attachmentFound = false;
+        
+        // Check lone particles first so disconnected clusters can reattach
+        for (int i = loneParticles.size() - 1; i >= 0; i--) {
+            Particle lone = loneParticles.get(i);
+            
+            // RULE: Always check and allow connection to the player on contact, 
+            // even if the particle already has 3 attachments elsewhere.
+            float distToPlayer = (float) lone.getPosition().distanceTo(player.getPosition());
+            if (distToPlayer < ATTACH_DISTANCE && !areConnected(lone, player)) {
+                ElasticLink newLink = new ElasticLink(player, lone, SPRING_K_MAIN, SPRING_REST, DETACH_DISTANCE);
+                activeConnections.add(new BlobConnection(player, lone, newLink));
+                
+                loneParticles.remove(i);
+                if (!blobParticles.contains(lone)) {
+                    blobParticles.add(lone);
+                }
+                attachmentFound = true;
+                break;
+            }
+            
+            // Non-player particles are capped at 3 connections for other regular nodes
+            if (getConnectionCount(lone) >= 3) continue; 
+            
+            // Otherwise, check other blob particles (respecting their cap of 3)
+            Particle nearestBlobNode = null;
+            float minDst = Float.MAX_VALUE;
+            
+            for (Particle blobP : blobParticles) {
+                if (blobP == player) continue; 
+                if (areConnected(lone, blobP)) continue;
+                if (getConnectionCount(blobP) >= 3) continue; 
+                
+                float dist = (float) lone.getPosition().distanceTo(blobP.getPosition());
+                if (dist < minDst) {
+                    minDst = dist;
+                    nearestBlobNode = blobP;
+                }
+            }
+            
+            if (nearestBlobNode != null && minDst < ATTACH_DISTANCE) {
+                ElasticLink newLink = new ElasticLink(nearestBlobNode, lone, SPRING_K_SECONDARY, SPRING_REST, DETACH_DISTANCE);
+                activeConnections.add(new BlobConnection(nearestBlobNode, lone, newLink));
+                
+                loneParticles.remove(i);
+                if (!blobParticles.contains(lone)) {
+                    blobParticles.add(lone);
+                }
+                attachmentFound = true;
+                break; 
+            }
+        }
+        
+        if (attachmentFound) continue;
+
+        // Secondary internal attachments between existing blob particles (lattice building)
+        for (int i = 0; i < blobParticles.size(); i++) {
+            Particle p1 = blobParticles.get(i);
+            if (p1 != player && getConnectionCount(p1) >= 3) continue;
+            
+            for (int j = i + 1; j < blobParticles.size(); j++) {
+                Particle p2 = blobParticles.get(j);
+                if (p2 != player && getConnectionCount(p2) >= 3) continue;
+                
+                if (areConnected(p1, p2)) continue;
+                
+                float dist = (float) p1.getPosition().distanceTo(p2.getPosition());
+                if (dist < ATTACH_DISTANCE * 0.85f) {
+                    float springK = (p1 == player || p2 == player) ? SPRING_K_MAIN : SPRING_K_SECONDARY;
+                    
+                    ElasticLink newLink = new ElasticLink(p1, p2, springK, SPRING_REST, DETACH_DISTANCE);
+                    activeConnections.add(new BlobConnection(p1, p2, newLink));
+                    attachmentFound = true;
+                    break;
+                }
+            }
+            if (attachmentFound) break;
+        }
+    }
+}
+
+
+// ==========================================
 // Render Functions
 // ==========================================
 
@@ -171,6 +348,7 @@ void drawGameplay() {
     accumulator += frameTime;
 
     updatePlayerControls();
+    updateBlobLogic();
     
     if (explosionRequested && player != null) {
         Point3D pos = player.getPosition();
@@ -192,19 +370,36 @@ void drawGameplay() {
         Vector3D flatVel = new Vector3D(vel.getX(), 0.0f, vel.getZ());
         
         if (flatVel.lengthSquared() > 0.01f) {
-            currentCamDir = flatVel.normalized();
+            // Lower multiplier (0.03f instead of 0.15f) slows down rotation response so it pans smoothly
+            currentCamDir = currentCamDir.mult(0.97f).add(flatVel.normalized().mult(0.03f)).normalized();
         }
         
-        float distanceBehind = 20.0f;
-        float heightAbove = 8.0f; 
+        // Less nauseating: further back, higher up, and interpolated smoothly
+        float distanceBehind = 30.0f;
+        float heightAbove = 14.0f; 
         
-        camera(
+        Point3D targetCamPos = new Point3D(
             pos.getX() - currentCamDir.getX() * distanceBehind, 
             pos.getY() + heightAbove, 
-            pos.getZ() - currentCamDir.getZ() * distanceBehind, 
-            pos.getX(), pos.getY(), pos.getZ(),                 
-            0.0f, -1.0f, 0.0f                                   
+            pos.getZ() - currentCamDir.getZ() * distanceBehind
         );
+        
+      // Damp camera position changes smoothly
+      if (smoothedCamPos == null) {
+          smoothedCamPos = targetCamPos;
+      } else {
+          smoothedCamPos = new Point3D(
+              smoothedCamPos.getX() + (targetCamPos.getX() - smoothedCamPos.getX()) * 0.1f,
+              smoothedCamPos.getY() + (targetCamPos.getY() - smoothedCamPos.getY()) * 0.1f,
+              smoothedCamPos.getZ() + (targetCamPos.getZ() - smoothedCamPos.getZ()) * 0.1f
+          );
+      }
+      
+      camera(
+          smoothedCamPos.getX(), smoothedCamPos.getY(), smoothedCamPos.getZ(), 
+          pos.getX(), pos.getY(), pos.getZ(),                 
+          0.0f, -1.0f, 0.0f                                   
+      );
         
         perspective(PI/3.0f, (float)width/height, 0.1f, 10000.0f);
     }
@@ -213,7 +408,6 @@ void drawGameplay() {
     RenderParticles();
     RenderCables();
     
-    // Render Springs!
     for (DrawableForceBinding df : drawableForces) {
         df.fg.draw(df.particle);
     }
@@ -264,7 +458,7 @@ void RenderForceDebug() {
 }
 
 // ==========================================
-// Input Handling & Timing (Unchanged logic)
+// Input Handling & Timing
 // ==========================================
 
 public void mousePressed() { if (currentState != GameState.Playing) return; }
@@ -389,17 +583,22 @@ void renderHUD() { reset2DContext(); renderScoreHUD(); renderSidePanel(); }
 
 void renderScoreHUD() {
     float cx = width / 2.0f;
-    float cy = height * 0.36f;
+    float cy = height * 0.1f;
+
     noStroke();
     fill(0, 0, 0, 120);
     rectMode(CENTER);
     rect(cx, cy, 280.0f, 120.0f, 14.0f);
     rectMode(CORNER);
+    
     textAlign(CENTER, CENTER);
     fill(255, 210, 60);
     textSize(20);
-    text("SCORE", cx, cy - 34.0f);
+    text("BLOB SIZE", cx, cy - 34.0f);
+    
     textSize(54);
+    fill(70, 255, 120);
+    text(blobParticles.size(), cx, cy + 10.0f);
 }
 
 void renderSidePanel() {
@@ -408,7 +607,7 @@ void renderSidePanel() {
     String[] statLines = {
         "FPS: " + Math.round(customFPS) + "   ms/frame: " + Math.round(smoothedDeltaTime * 1000.0f),
         "Particle instances: " + formatWithCommas(totalCount),
-        "Player height: " + String.format("%.2f", playerHeight) + " m",
+        "Blob count: " + formatWithCommas(blobParticles.size()),
         "Force registrations: " + forceRegistry.size(),
     };
 
