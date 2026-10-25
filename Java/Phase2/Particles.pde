@@ -19,12 +19,22 @@ class Particle {
     private boolean m_firstVerletStep = true;
     
     private Material m_material = Material.STEEL;
+    
+    
+    // Accumulator
+    private final Vector3D m_forceAccumulator = new Vector3D();  // Newton, cleared every substep
+    private Vector3D m_lastAcceleration = new Vector3D();
 
     Vector3D computeAcceleration() {
         if (m_inverseMass <= 0.0f) {
             return new Vector3D();
         }
-        return m_acceleration;
+        return new Vector3D
+        (
+            m_acceleration.getX() + m_forceAccumulator.getX() * m_inverseMass,
+            m_acceleration.getY() + m_forceAccumulator.getY() * m_inverseMass,
+            m_acceleration.getZ() + m_forceAccumulator.getZ() * m_inverseMass
+        );
     }
 
     public Particle() {
@@ -39,10 +49,11 @@ class Particle {
         m_linearDamping = damping;
         m_affectedByGravity = affectedByGravity;
         m_previousPosition = new Point3D(pos.getX(), pos.getY(), pos.getZ());
-        
+        /*
         if (m_affectedByGravity) {
             m_acceleration = m_acceleration.add(new Vector3D(0.0f, -PhysicsConstants.GRAVITY, 0.0f));
         }
+        */
     }
 
     Point3D getPosition() { return m_position; }
@@ -79,22 +90,48 @@ class Particle {
     Material getMaterial() { return m_material; }
     void setMaterial(Material material) { m_material = material; }
 
+    Vector3D getLastAcceleration() {
+        return new Vector3D(m_lastAcceleration.getX(), m_lastAcceleration.getY(), m_lastAcceleration.getZ());
+    }
+
+    void addForce(Vector3D force)
+    {
+      m_forceAccumulator.setX(m_forceAccumulator.getX() + force.getX());
+      m_forceAccumulator.setY(m_forceAccumulator.getY() + force.getY());
+      m_forceAccumulator.setZ(m_forceAccumulator.getZ() + force.getZ());
+    }
+    
+    void clearAccumulator()
+    {
+      m_forceAccumulator.setX(0.0f);
+      m_forceAccumulator.setY(0.0f);
+      m_forceAccumulator.setZ(0.0f);
+    }
+
+    void applyImpulse(Vector3D impulse) {
+        if (m_inverseMass <= 0.0f) return;
+        setVelocity(m_velocity.add(impulse.mult(m_inverseMass)));
+    }
+
     void applyVerletIntegration(float deltaTime) {
         if (m_inverseMass <= 0.0f) return;
 
-        // 1. Drift (In-place mutation to avoid heap allocation)
-        float halfDtSq = 0.5f * deltaTime * deltaTime;
-        m_position.setX(m_position.getX() + m_velocity.getX() * deltaTime + m_acceleration.getX() * halfDtSq);
-        m_position.setY(m_position.getY() + m_velocity.getY() * deltaTime + m_acceleration.getY() * halfDtSq);
-        m_position.setZ(m_position.getZ() + m_velocity.getZ() * deltaTime + m_acceleration.getZ() * halfDtSq);
-
         Vector3D newAcceleration = computeAcceleration(); 
 
+        // 1. Drift (In-place mutation to avoid heap allocation)
+        float halfDtSq = 0.5f * deltaTime * deltaTime;
+        m_position.setX(m_position.getX() + m_velocity.getX() * deltaTime + newAcceleration.getX() * halfDtSq);
+        m_position.setY(m_position.getY() + m_velocity.getY() * deltaTime + newAcceleration.getY() * halfDtSq);
+        m_position.setZ(m_position.getZ() + m_velocity.getZ() * deltaTime + newAcceleration.getZ() * halfDtSq);
+
         // 2. Kick
+        // used to be m_velocity.setX(m_velocity.getX() + (m_acceleration.getX() + newAcceleration.getX()) * halfDt);
+        // using a(n+1) = a(n)
+        // ( a(n) + a(n+1) ) * dt/2 = a * dt
         float halfDt = 0.5f * deltaTime;
-        m_velocity.setX(m_velocity.getX() + (m_acceleration.getX() + newAcceleration.getX()) * halfDt);
-        m_velocity.setY(m_velocity.getY() + (m_acceleration.getY() + newAcceleration.getY()) * halfDt);
-        m_velocity.setZ(m_velocity.getZ() + (m_acceleration.getZ() + newAcceleration.getZ()) * halfDt);
+        m_velocity.setX(m_velocity.getX() + newAcceleration.getX() * deltaTime);
+        m_velocity.setY(m_velocity.getY() + newAcceleration.getY() * deltaTime);
+        m_velocity.setZ(m_velocity.getZ() + newAcceleration.getZ() * deltaTime);
 
         // 3. Time-corrected damping
         float dampingFactor = (float)Math.pow(m_linearDamping, deltaTime);
@@ -166,6 +203,8 @@ class Particle {
             case Euler:          integrateEuler(t); break;
             case PositionVerlet: integrateVerlet(t); break;
         }
+        m_lastAcceleration = computeAcceleration();
+        clearAccumulator();
     }
 
     void draw() {

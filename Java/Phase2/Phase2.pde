@@ -20,6 +20,24 @@ IntegrationMode currentIntegrationMode = IntegrationMode.PositionVerlet;
 float totalTime = 0;
 float accumulator = 0;
 
+final float THRUST_WEIGHT_RATIO = 2.0f;
+boolean thrustHeld = false;
+
+final float PUSH_FORCE = 200.0f;
+boolean pushForward = false, pushBack = false, pushLeft = false, pushRight = false;
+
+ConstantForceGenerator thrustGenerator;
+ConstantForceGenerator pushGenerator;
+
+final float DEBUG_FORCE_SCALE = 0.01f;
+boolean showForceDebug = false;
+boolean debugKeyDown = false;
+
+final float EXPLOSION_RADIUS = 8.0f;
+final float EXPLOSION_IMPULSE = 400.0f;
+boolean explosionRequested = false;
+boolean explosionKeyDown = false;
+
 // --- Timing ---
 float customDeltaTime = 0;
 float customFPS = 0;
@@ -29,6 +47,8 @@ long lastTimeMs = 0;
 // Utility instances
 Arena arena = new Arena();
 Tests testSuite = new Tests();
+ForceRegistry forceRegistry = new ForceRegistry();
+GravityGenerator gravityGenerator = new GravityGenerator(new Vector3D(0.0f, -PhysicsConstants.GRAVITY, 0.0f));
 
 public void settings() {
     //size(GraphicsConstants.ScreenWidth, GraphicsConstants.ScreenHeight, P3D); 
@@ -70,6 +90,9 @@ void resetGame() {
     cables.clear();
     totalTime = 0;
     currentState = GameState.Playing;
+    thrustHeld = false;
+    pushForward = false; pushBack = false; pushLeft = false; pushRight = false;
+    explosionRequested = false;
     
     // Position Earth massively BELOW the origin (-Y direction)
     earth = new Earth(new Point3D(0.0f, -6371000.0f, 0.0f)); 
@@ -124,6 +147,20 @@ void resetGame() {
     cables.add(cable2);
     cables.add(cable3);
     cables.add(cable4);*/
+    
+    for (Particle p : particles) {
+        if (p.getAffectedByGravity()) {
+            forceRegistry.add(p, gravityGenerator);
+        }
+    }
+    
+    float thrust = THRUST_WEIGHT_RATIO * player.getMass() * PhysicsConstants.GRAVITY;
+    thrustGenerator = new ConstantForceGenerator(new Vector3D(0.0f, thrust, 0.0f));
+    thrustGenerator.setActive(false);
+    pushGenerator = new ConstantForceGenerator(new Vector3D());
+    pushGenerator.setActive(false);
+    forceRegistry.add(player, thrustGenerator);
+    forceRegistry.add(player, pushGenerator);
 }
 // ==========================================
 // Render Functions
@@ -153,7 +190,17 @@ void drawGameplay() {
     float frameTime = min(customDeltaTime, PhysicsConstants.MAX_FRAME_TIME);
     accumulator += frameTime;
 
+    updatePlayerControls();
+    
+    if (explosionRequested && player != null) {
+        Point3D pos = player.getPosition();
+        applyExplosion(particles, new Point3D(pos.getX(), 0.0f, pos.getZ()), EXPLOSION_RADIUS, EXPLOSION_IMPULSE);
+        explosionRequested = false;
+    }
+
     while (accumulator >= PhysicsConstants.FIXED_TIMESTEP) {
+        forceRegistry.updateForces(PhysicsConstants.FIXED_TIMESTEP);
+      
         updateParticles(PhysicsConstants.FIXED_TIMESTEP);
         
         resolveCollisionsAndConstraints(PhysicsConstants.FIXED_TIMESTEP);
@@ -194,12 +241,39 @@ void drawGameplay() {
     arena.draw(this); 
     RenderParticles();
     RenderCables();
+    if (showForceDebug) RenderForceDebug();
     renderHUD();
 }
 
 void RenderCables() {
     for (Cable cable : cables) {
         cable.draw();
+    }
+}
+
+void RenderForceDebug() {
+    for (Particle p : particles) {
+        if (p.getInverseMass() <= 0.0f) continue;
+
+        Vector3D netForce = p.getLastAcceleration().mult(p.getMass());
+        if (netForce.lengthSquared() < 1e-6f) continue;
+
+        Point3D from = p.getPosition();
+        Point3D tip = from.add(netForce.mult(DEBUG_FORCE_SCALE));
+
+        //Arrow shaft
+        stroke(255, 0, 255);
+        strokeWeight(3.0f);
+        line(from.getX(), from.getY(), from.getZ(), tip.getX(), tip.getY(), tip.getZ());
+        noStroke();
+
+        //Arrow head: small sphere at the tip
+        pushMatrix();
+        translate(tip.getX(), tip.getY(), tip.getZ());
+        fill(255, 0, 255);
+        sphereDetail(8);
+        sphere(0.12f);
+        popMatrix();
     }
 }
 
@@ -254,9 +328,35 @@ public void keyPressed() {
     }
 
     if (currentState == GameState.Playing) {
-      
+        char k = Character.toLowerCase(key);
+        if (k == 't') thrustHeld = true;
+        if (k == 'w') pushForward = true;
+        if (k == 's') pushBack = true;
+        if (k == 'a') pushLeft = true;
+        if (k == 'd') pushRight = true;
+        if (k == 'f' && !debugKeyDown) {
+            debugKeyDown = true;
+            showForceDebug = !showForceDebug;
+        }
+        if (k == 'e' && !explosionKeyDown) {
+            explosionKeyDown = true;
+            explosionRequested = true;
+        }
     }
 }
+
+public void keyReleased()
+{
+    char k = Character.toLowerCase(key);
+    if (k == 't') thrustHeld = false;
+    if (k == 'w') pushForward = false;
+    if (k == 's') pushBack = false;
+    if (k == 'a') pushLeft = false;
+    if (k == 'd') pushRight = false;
+    if (k == 'f') debugKeyDown = false;
+    if (k == 'e') explosionKeyDown = false;
+}
+
 
 void actualiseDeltaTime() {
     long currentTime = System.nanoTime();
@@ -282,6 +382,29 @@ void reset2DContext() {
     camera();
     noLights();
     noStroke();
+}
+
+void updatePlayerControls() {
+    if (thrustGenerator == null || pushGenerator == null) return;
+
+    thrustGenerator.setActive(thrustHeld);
+
+    Vector3D forward = new Vector3D(currentCamDir.getX(), 0.0f, currentCamDir.getZ()).normalized();
+    Vector3D right = new Vector3D(0.0f, 1.0f, 0.0f).cross(forward);
+
+    Vector3D dir = new Vector3D();
+    if (pushForward) dir = dir.add(forward);
+    if (pushBack)    dir = dir.sub(forward);
+    if (pushRight)   dir = dir.add(right);
+    if (pushLeft)    dir = dir.sub(right);
+
+    if (dir.lengthSquared() < 1e-6f) {
+        pushGenerator.setActive(false);
+        return;
+    }
+    
+    pushGenerator.setForce(dir.normalized().mult(PUSH_FORCE));
+    pushGenerator.setActive(true);
 }
 
 
@@ -334,14 +457,22 @@ void renderScoreHUD() {
 void renderSidePanel() {
     int totalCount = particles.size();
 
+    float playerHeight = (player != null) ? player.getPosition().getY() : 0.0f;
+
     String[] statLines = {
         "FPS: " + Math.round(customFPS) + "   ms/frame: " + Math.round(smoothedDeltaTime * 1000.0f),
         "Particle instances: " + formatWithCommas(totalCount),
+        "Player height: " + String.format("%.2f", playerHeight) + " m",
+        "Force registrations: " + forceRegistry.size(),
     };
 
 
     String[] controlLines = {
         "Integration [I]: " + currentIntegrationMode.name(),
+        "Thrust [T] (hold): " + ((thrustGenerator != null && thrustGenerator.isActive()) ? "ON" : "OFF"),
+        "Push [WASD]: " + ((pushGenerator != null && pushGenerator.isActive()) ? "ON" : "OFF"),
+        "Debug arrow [F]",
+        "Explosion [E]",
         "End screen [G]"
     };
 
