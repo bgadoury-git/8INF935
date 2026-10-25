@@ -36,6 +36,16 @@ class Particle {
             m_acceleration.getZ() + m_forceAccumulator.getZ() * m_inverseMass
         );
     }
+    
+    Vector3D getAppliedForce() {
+        if (m_inverseMass <= 0.0f) return new Vector3D();
+        
+        return new Vector3D(
+            m_forceAccumulator.getX() + m_acceleration.getX() * getMass(),
+            m_forceAccumulator.getY() + m_acceleration.getY() * getMass(),
+            m_forceAccumulator.getZ() + m_acceleration.getZ() * getMass()
+        );
+    }
 
     public Particle() {
         this(new Point3D(), new Vector3D(), new Vector3D(), 1.0f, 0.999f, true);

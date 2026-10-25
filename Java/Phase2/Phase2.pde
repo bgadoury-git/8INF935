@@ -15,6 +15,11 @@ Vector3D currentCamDir = new Vector3D(0.0f, 0.0f, 1.0f);
 ArrayList<Particle> particles = new ArrayList<Particle>();
 ArrayList<Cable> cables = new ArrayList<Cable>();
 
+// --- Friction State ---
+ArrayList<FrictionGenerator> frictionGenerators = new ArrayList<FrictionGenerator>();
+CoulombFrictionGenerator playerGroundFriction; // Used to display state in the HUD
+boolean frictionEnabled = true;
+
 IntegrationMode currentIntegrationMode = IntegrationMode.PositionVerlet;
 
 float totalTime = 0;
@@ -85,82 +90,77 @@ public void draw() {
 SpaceSphere player;
 Earth earth;
 
+
 void resetGame() {
     particles.clear();
     cables.clear();
+    forceRegistry.clear();
     totalTime = 0;
     currentState = GameState.Playing;
-    thrustHeld = false;
-    pushForward = false; pushBack = false; pushLeft = false; pushRight = false;
-    explosionRequested = false;
     
-    // Position Earth massively BELOW the origin (-Y direction)
+    // --- 1. RESTORED SETUP: Spawn Earth, Player, and Entities ---
     earth = new Earth(new Point3D(0.0f, -6371000.0f, 0.0f)); 
     
-    // Position Bot at origin
     player = new SpaceSphere(
-        new Point3D(0.0f, 1.0f, 0.0f), 
-        new Vector3D(0.0f, 0.0f, 0.0f)
-    );
-    /*
-        SmallSphere entity1 = new SmallSphere(
-        new Point3D(0.0f, 1.0f, 0.0f),
-        new Vector3D(0.0f, 0.0f, 0.0f)
-    );
-    */
-    
-    SpaceSphere BonceBall = new SpaceSphere(
-        new Point3D(0.0f, 10.0f, 0.0f), 
-        new Vector3D(0.0f, 0.0f, 0.0f)
+        new Point3D(0.0f, 2.0f, 0.0f), 
+        new Vector3D(0.0f, 20.0f, 20.0f)
     );
     
-    BonceBall.setMaterial(Material.RUBBER);
-/*
-       SmallSphere entity2 = new SmallSphere(
-        new Point3D(-1.0f, 1.0f, 2.0f),
-        new Vector3D(0.0f, 0.0f, 0.0f)
-    );
-    
-       SmallSphere entity3 = new SmallSphere(
-        new Point3D(0.0f, 1.0f, 2.0f),
-        new Vector3D(0.0f, 0.0f, 0.0f)
-    );
-    
-       SmallSphere entity4 = new SmallSphere(
-        new Point3D(1.0f, 1.0f, 2.0f),
-        new Vector3D(0.0f, 0.0f, 0.0f)
-    );*/
+    SmallSphere entity1 = new SmallSphere(new Point3D(0.0f, 1.0f, 0.0f), new Vector3D());
+    SmallSphere entity2 = new SmallSphere(new Point3D(-1.0f, 1.0f, 2.0f), new Vector3D());
+    SmallSphere entity3 = new SmallSphere(new Point3D(0.0f, 1.0f, 2.0f), new Vector3D());
+    SmallSphere entity4 = new SmallSphere(new Point3D(1.0f, 1.0f, 2.0f), new Vector3D());
     
     particles.add(earth);
     particles.add(player);
-    /*particles.add(entity1);
+    particles.add(entity1);
     particles.add(entity2);
     particles.add(entity3);
-    particles.add(entity4);*/
-    particles.add(BonceBall);
-   /* 
-    Cable cable = new Cable(player, entity1, 5);
-    Cable cable2 = new Cable(entity1, entity2, 5);
-    Cable cable3 = new Cable(entity1, entity3, 5);
-    Cable cable4 = new Cable(entity1, entity4, 5);
-    cables.add(cable);
-    cables.add(cable2);
-    cables.add(cable3);
-    cables.add(cable4);*/
-    
+    particles.add(entity4);
+
+    cables.add(new Cable(player, entity1, 5));
+    cables.add(new Cable(entity1, entity2, 5));
+    cables.add(new Cable(entity1, entity3, 5));
+    cables.add(new Cable(entity1, entity4, 5));
+
+    // --- 2. Register Gravity first ---
     for (Particle p : particles) {
         if (p.getAffectedByGravity()) {
             forceRegistry.add(p, gravityGenerator);
         }
     }
     
-    float thrust = THRUST_WEIGHT_RATIO * player.getMass() * PhysicsConstants.GRAVITY;
-    thrustGenerator = new ConstantForceGenerator(new Vector3D(0.0f, thrust, 0.0f));
+    // --- 3. Register Player Inputs ---
+    thrustGenerator = new ConstantForceGenerator(new Vector3D(0.0f, THRUST_WEIGHT_RATIO * player.getMass() * PhysicsConstants.GRAVITY, 0.0f));
     thrustGenerator.setActive(false);
     pushGenerator = new ConstantForceGenerator(new Vector3D());
     pushGenerator.setActive(false);
     forceRegistry.add(player, thrustGenerator);
     forceRegistry.add(player, pushGenerator);
+
+    // --- 4. Register Friction LAST ---
+    setupFriction();
+}
+
+void setupFriction() {
+    frictionGenerators.clear();
+    DragForceGenerator airDrag = new DragForceGenerator(0.1f, 0.02f);
+    frictionGenerators.add(airDrag);
+
+    for (Particle p : particles) {
+        if (p.getInverseMass() <= 0.0f) continue; 
+
+        forceRegistry.add(p, airDrag);
+
+        CoulombFrictionGenerator groundFriction =
+            new CoulombFrictionGenerator(new SphericalSurface(earth), 0.6f, 0.4f);
+        frictionGenerators.add(groundFriction);
+        
+        // Appending to forceRegistry here guarantees it executes after gravity/push/thrust
+        forceRegistry.add(p, groundFriction); 
+
+        if (p == player) playerGroundFriction = groundFriction;
+    }
 }
 // ==========================================
 // Render Functions
