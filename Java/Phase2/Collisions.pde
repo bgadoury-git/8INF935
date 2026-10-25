@@ -29,6 +29,8 @@ class Cable {
 }
 
 void resolveCollisionsAndConstraints(float dt) {
+    contactFriction.beginStep();
+
     // 1. O(N^2) COLLISION LOOP
     for (int i = 0; i < particles.size(); i++) {
         for (int j = i + 1; j < particles.size(); j++) {
@@ -75,17 +77,27 @@ void resolveCollisionsAndConstraints(float dt) {
                 
                 // C. CONTACT AU REPOS
                 float gravityVelocity = PhysicsConstants.GRAVITY * dt;
-                if (Math.abs(vRelDotN) <= gravityVelocity) {
+                // NOTE (friction) : tolérance de 1 %. Au repos, vRelDotN vaut g*dt à l'arrondi flottant près :
+                // sans tolérance, le test échoue un pas sur deux, la balle reçoit un petit rebond (e > 0) et
+                // la force normale alterne entre un pas fort et un pas faible. La friction statique
+                // (mu_s * N) est alors trop faible un pas sur deux et la balle s'échappe.
+                if (Math.abs(vRelDotN) <= gravityVelocity * 1.01f) {
                     e = 0.0f; // Force perfectly inelastic collision (no bounce)
                 }
                 
                 // D. APPLY FORCES TO ACCUMULATOR
+                float normalForce = 0.0f;
                 if (totalInvMass > 0.0f) {
                     float k = ((e + 1.0f) * vRelDotN) / totalInvMass;
                     Vector3D collisionForce = n.mult(k).div(dt);
+                    normalForce = k / dt;
                     p1.addForce(collisionForce.negate());
                     p2.addForce(collisionForce);
                 }
+                
+                // E. FRICTION (Coulomb) : réutilise la normale et la force normale déjà calculées.
+                // Les coefficients sont lus dans PhysicsMaterials par le générateur.
+                contactFriction.applyContact(p1, p2, n, normalForce, dt);
             }
         }
     }

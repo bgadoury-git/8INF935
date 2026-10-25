@@ -1,46 +1,150 @@
-// Deux modeles : 
+// ==========================================
+// Forces de friction
+// ==========================================
+// Deux phénomènes physiques différents, donc deux générateurs :
 //
-//  1. DragForceGenerator : friction FLUIDE (air, eau). Depend de la vitesse.
-//                          f = -v^ * (k1*|v| + k2*|v|^2)
+//  1. ContactFrictionGenerator : friction SÈCHE (loi de Coulomb) entre deux particules en contact.
+//       - UN SEUL générateur générique : aucun setup par particule.
+//       - Les contacts viennent du système de collisions (resolveCollisionsAndConstraints) :
+//         ce fichier ne détecte rien et ne recalcule ni distance ni normale.
+//       - Les coefficients viennent de la table PhysicsMaterials (Materials.pde),
+//         selon le matériau des DEUX particules en contact.
+//       - Comme les forces de collision, la friction est ajoutée à l'accumulateur des particules
+//         (elle est donc appliquée à la prochaine intégration).
 //
-//  2. CoulombFrictionGenerator : friction SECHE entre la particule et une surface.
-//                                Depend de la force normale N (pas de la vitesse).
-//                                   - statique : |F_f| <= mu_s * N  (l'objet "colle")
-//                                   - cinetique: |F_f| =  mu_k * N  (l'objet glisse)
-//
-// Les deux sont des ForceGenerator : ils ajoutent simplement leur force a
-// l'accumulateur de la particule. Ils ne touchent pas a la position ou a la vitesse.
+//  2. DragForceGenerator : friction FLUIDE (air, eau). Elle ne dépend pas d'un contact mais
+//     de la vitesse : f = -v^ * (k1*|v| + k2*|v|^2). C'est un ForceGenerator classique,
+//     enregistré dans le ForceRegistry.
 
-// Seuil. Si la vitesse est inferieure, elle est consideree comme nulle.
+// Seuil. Si la vitesse est inférieure, elle est considérée comme nulle.
 final float FRICTION_EPSILON = 1e-6f;
 
-// Epaisseur (en m) de la "peau de contact" : si l'ecart entre la particule et la
-// surface est inferieur a cette valeur, on considere qu'ils se touchent.
-final float FRICTION_CONTACT_TOLERANCE = 0.1f;
+// ==========================================
+// 1. FRICTION DE CONTACT (Coulomb)
+// ==========================================
 
-// Permet d'activer / desactiver un generateur (touche [F])
-abstract class FrictionGenerator implements ForceGenerator {
+// Interface des générateurs qui réagissent à un contact détecté par le système de collisions.
+interface ContactGenerator {
+    // p1, p2       : les deux particules en contact
+    // normal       : normale unitaire du contact, orientée de p1 vers p2
+    // normalForce  : intensité (>= 0) de la force normale que le résolveur vient d'ajouter
+    // dt           : pas de temps de la simulation
+    void applyContact(Particle p1, Particle p2, Vector3D normal, float normalForce, float dt);
+}
+
+enum ContactState {
+    Airborne, // aucun contact avec friction ce pas
+    Static,   // contact, la particule "colle"
+    Sliding   // contact, la particule glisse
+}
+
+// Loi de Coulomb :
+//     N = force normale (ce que le contact retient)
+//     statique  : |F_f| <= mu_s * N   (la friction annule exactement le glissement)
+//     cinétique : |F_f|  = mu_k * N   (opposée au glissement)
+//   avec mu_k <= mu_s, lus dans PhysicsMaterials pour la paire de matériaux.
+//
+// COMMENT ON CHOISIT statique / cinétique : on calcule la force qui arrêterait le glissement
+// EXACTEMENT en un pas, pour deux particules de masses inverses invM1 et invM2 :
+//     F_stop = |v_t| / (dt * (invM1 + invM2))       (v_t : vitesse relative tangentielle)
+//   - si F_stop <= mu_s * N : le contact "tient" -> friction = F_stop (le glissement s'arrête net)
+//   - sinon                 : ça glisse -> friction = mu_k * N, opposée au glissement.
+// Dans le 2e cas, mu_k * N <= mu_s * N < F_stop : la friction ne peut jamais inverser le glissement
+// (pas de tremblement à basse vitesse).
+//
+// Bonus : N est plus grande lors d'un rebond que lors d'un contact au repos, donc une balle qui
+// rebondit perd aussi de la vitesse horizontale pendant l'impact.
+//
+// LIMITE : la friction est calculée au moment de la collision, donc elle ne "voit" pas les forces
+// que les autres générateurs ajouteront au prochain pas (ressort, poussée...). Un objet posé et
+// poussé sous le seuil statique n'est donc pas parfaitement immobile : il avance à très faible
+// vitesse (au plus mu_s * g * dt, environ 10 cm/s) au lieu de rester à l'arrêt.
+class ContactFrictionGenerator implements ContactGenerator {
     private boolean m_enabled = true;
+    private HashMap<Particle, ContactState> m_states = new HashMap<Particle, ContactState>();
 
     boolean isEnabled() { return m_enabled; }
     void setEnabled(boolean enabled) { m_enabled = enabled; }
 
-    @Override
-    public void updateForce(Particle p, float dt) {
-        if (!m_enabled) return;
-        if (p.getInverseMass() <= 0.0f) return;
-        applyFriction(p, dt);
+    // À appeler au début de chaque pas de résolution des collisions (remet les états à zéro).
+    void beginStep() {
+        m_states.clear();
     }
 
-    protected abstract void applyFriction(Particle p, float dt);
+    // État de contact d'une particule pendant le dernier pas (pour le HUD).
+    ContactState getState(Particle p) {
+        ContactState state = m_states.get(p);
+        return (state != null) ? state : ContactState.Airborne;
+    }
+
+    public void applyContact(Particle p1, Particle p2, Vector3D n, float normalForce, float dt) {
+        if (!m_enabled) return;
+        if (normalForce <= 0.0f) return; // rien ne presse les particules l'une sur l'autre
+
+        float invM1 = p1.getInverseMass();
+        float invM2 = p2.getInverseMass();
+        float totalInvMass = invM1 + invM2;
+        if (totalInvMass <= 0.0f) return; // deux masses infinies : rien ne peut bouger
+
+        // 1. Coefficients de la table, selon les matériaux des deux particules
+        MaterialInteraction material = PhysicsMaterials.get(p1.getMaterial(), p2.getMaterial());
+        float staticCoeff = material.staticFriction;
+        float kineticCoeff = Math.min(material.kineticFriction, staticCoeff); // mu_k <= mu_s
+
+        // 2. Vitesse relative tangentielle : v_t = v_rel - (v_rel . n) n
+        Vector3D vRel = p1.getVelocity().sub(p2.getVelocity());
+        Vector3D vTangent = vRel.sub(n.mult(vRel.dot(n)));
+        float slideSpeed = vTangent.length();
+        if (slideSpeed < FRICTION_EPSILON) {
+            recordState(p1, p2, ContactState.Static);
+            return;
+        }
+        // Direction dans laquelle p1 glisse par rapport à p2
+        Vector3D t = vTangent.mult(1.0f / slideSpeed);
+
+        // 3. Statique ou cinétique ?
+        float stopForce = slideSpeed / (dt * totalInvMass);
+        float maxStaticForce = staticCoeff * normalForce;
+        float frictionForce;
+        if (stopForce <= maxStaticForce) {
+            frictionForce = stopForce;
+            recordState(p1, p2, ContactState.Static);
+        } else {
+            frictionForce = kineticCoeff * normalForce;
+            recordState(p1, p2, ContactState.Sliding);
+        }
+
+        // 4. Application à l'accumulateur (même convention de signes que la force normale du résolveur)
+        Vector3D friction = t.mult(frictionForce);
+        p1.addForce(friction.negate());
+        p2.addForce(friction);
+    }
+
+    // Une particule peut avoir plusieurs contacts : "Sliding" l'emporte sur "Static".
+    private void recordState(Particle p1, Particle p2, ContactState state) {
+        if (p1.getInverseMass() > 0.0f) mergeState(p1, state);
+        if (p2.getInverseMass() > 0.0f) mergeState(p2, state);
+    }
+
+    private void mergeState(Particle p, ContactState state) {
+        if (m_states.get(p) != ContactState.Sliding) {
+            m_states.put(p, state);
+        }
+    }
 }
 
-// 1. FRICTION FLUIDE (trainee / drag)
-// Millington :
+// ==========================================
+// 2. FRICTION FLUIDE (traînée / drag)
+// ==========================================
+// Modèle à deux coefficients (Millington) :
 //     f_drag = -v^ * ( k1 * |v|  +  k2 * |v|^2 )
-class DragForceGenerator extends FrictionGenerator {
+//   - k1 : terme linéaire    (écoulement laminaire, faibles vitesses)
+//   - k2 : terme quadratique (écoulement turbulent, hautes vitesses)
+//   - v^ : direction de la vitesse (donc la force s'y oppose toujours)
+class DragForceGenerator implements ForceGenerator {
     private float m_k1;
     private float m_k2;
+    private boolean m_enabled = true;
 
     public DragForceGenerator(float k1, float k2) {
         m_k1 = k1;
@@ -49,139 +153,28 @@ class DragForceGenerator extends FrictionGenerator {
 
     float getK1() { return m_k1; }
     float getK2() { return m_k2; }
+    boolean isEnabled() { return m_enabled; }
+    void setEnabled(boolean enabled) { m_enabled = enabled; }
 
     @Override
-    protected void applyFriction(Particle p, float dt) {
+    public void updateForce(Particle p, float dt) {
+        if (!m_enabled) return;
+        if (p.getInverseMass() <= 0.0f) return; // masse infinie : ne bouge pas
+
         Vector3D v = p.getVelocity();
         float speed = v.length();
-        if (speed < FRICTION_EPSILON) return; 
+        if (speed < FRICTION_EPSILON) return; // pas de direction définie à l'arrêt
 
         float dragMagnitude = m_k1 * speed + m_k2 * speed * speed;
 
+        // GARDE-FOU DE STABILITÉ :
+        // Avec une intégration explicite, une traînée trop forte pourrait inverser la vitesse
+        // en un seul pas. La friction ne peut que freiner, jamais propulser.
+        // La force maximale qui arrête exactement la particule en un pas est F_max = m * |v| / dt
         float maxMagnitude = p.getMass() * speed / dt;
         dragMagnitude = Math.min(dragMagnitude, maxMagnitude);
 
+        // f = -v^ * magnitude = v * (-magnitude / |v|)
         p.addForce(v.mult(-dragMagnitude / speed));
-    }
-}
-
-// Surfaces de contact (pour la friction de Coulomb)
-interface ContactSurface {
-    // Retourne la normale UNITAIRE de la surface (orientee vers la particule)
-    // si la particule est en contact (ecart <= tolerance), sinon null.
-    Vector3D getContactNormal(Particle p, float tolerance);
-}
-
-// Surface spherique
-class SphericalSurface implements ContactSurface {
-    private Particle m_body;
-
-    public SphericalSurface(Particle body) {
-        m_body = body;
-    }
-
-    @Override
-    public Vector3D getContactNormal(Particle p, float tolerance) {
-        double dx = (double)p.getPosition().getX() - (double)m_body.getPosition().getX();
-        double dy = (double)p.getPosition().getY() - (double)m_body.getPosition().getY();
-        double dz = (double)p.getPosition().getZ() - (double)m_body.getPosition().getZ();
-        double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (dist < 1e-9) return null;
-
-        double gap = dist - (double)m_body.getRadius() - (double)p.getRadius();
-        if (gap > (double)tolerance) return null;
-
-        return new Vector3D((float)(dx / dist), (float)(dy / dist), (float)(dz / dist));
-    }
-}
-
-// Surface plane infinie
-class PlaneSurface implements ContactSurface {
-    private Point3D m_point;
-    private Vector3D m_normal;
-
-    public PlaneSurface(Point3D point, Vector3D normal) {
-        m_point = point;
-        m_normal = normal.normalized();
-    }
-
-    @Override
-    public Vector3D getContactNormal(Particle p, float tolerance) {
-        float gap = p.getPosition().sub(m_point).dot(m_normal) - p.getRadius();
-        if (gap > tolerance) return null;
-        return m_normal;
-    }
-}
-
-// 2. FRICTION DE COULOMB (statique + cinetique)
-enum ContactState {
-    Airborne, // pas de contact : aucune friction seche
-    Static,   // contact, la particule "colle"
-    Sliding   // contact, la particule glisse
-}
-
-class CoulombFrictionGenerator extends FrictionGenerator {
-    private ContactSurface m_surface;
-    private float m_staticCoeff;   // mu_s
-    private float m_kineticCoeff;  // mu_k
-    private float m_contactTolerance = FRICTION_CONTACT_TOLERANCE;
-    private ContactState m_state = ContactState.Airborne;
-
-    public CoulombFrictionGenerator(ContactSurface surface, float staticCoeff, float kineticCoeff) {
-        m_surface = surface;
-        m_staticCoeff = staticCoeff;
-        m_kineticCoeff = Math.min(kineticCoeff, staticCoeff);
-    }
-
-    ContactState getState() { return m_state; }
-    float getStaticCoeff() { return m_staticCoeff; }
-    float getKineticCoeff() { return m_kineticCoeff; }
-    void setContactTolerance(float tolerance) { m_contactTolerance = tolerance; }
-
-    @Override
-    protected void applyFriction(Particle p, float dt) {
-        // 1. Y a-t-il contact ?
-        Vector3D n = m_surface.getContactNormal(p, m_contactTolerance);
-        if (n == null) {
-            m_state = ContactState.Airborne;
-            return;
-        }
-
-        // 2. Force normale N : la partie de la force appliquee qui PRESSE la particule contre la surface.
-        Vector3D applied = p.getAppliedForce();
-        float appliedAlongNormal = applied.dot(n);
-        float normalForce = Math.max(0.0f, -appliedAlongNormal);
-        if (normalForce <= 0.0f) {
-            // La particule est tiree/poussee hors de la surface : rien ne la
-            // retient, donc pas de friction.
-            m_state = ContactState.Airborne;
-            return;
-        }
-
-        // 3. Decomposition tangentielle
-        Vector3D v = p.getVelocity();
-        Vector3D velocityTangent = v.sub(n.mult(v.dot(n)));
-        Vector3D appliedTangent = applied.sub(n.mult(appliedAlongNormal));
-
-        // 4. Force qui arreterait la particule exactement sur ce pas
-        Vector3D stopForce = velocityTangent.mult(p.getMass() / dt).add(appliedTangent);
-        float stopMagnitude = stopForce.length();
-        float maxStatic = m_staticCoeff * normalForce;
-
-        if (stopMagnitude <= maxStatic) {
-            // --- FRICTION STATIQUE : la surface tient la particule ---
-            m_state = ContactState.Static;
-            p.addForce(stopForce.negate());
-        } else {
-            // --- FRICTION CINETIQUE : la particule glisse ---
-            m_state = ContactState.Sliding;
-
-            // La friction s'oppose au glissement.
-            Vector3D slideDirection = (velocityTangent.length() > 1e-4f)
-                ? velocityTangent.normalized()
-                : appliedTangent.normalized();
-
-            p.addForce(slideDirection.mult(-m_kineticCoeff * normalForce));
-        }
     }
 }

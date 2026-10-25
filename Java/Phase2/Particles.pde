@@ -43,15 +43,6 @@ class Particle {
         }
         return m_acceleration.add(m_forceAccum.mult(m_inverseMass));
     }
-    
-    Vector3D getAppliedForce() {
-        if (m_inverseMass <= 0.0f) return new Vector3D();
-        return new Vector3D(
-            m_forceAccum.getX() + m_acceleration.getX() * getMass(),
-            m_forceAccum.getY() + m_acceleration.getY() * getMass(),
-            m_forceAccum.getZ() + m_acceleration.getZ() * getMass()
-        );
-    }
 
     public Particle() {
         this(new Point3D(), new Vector3D(), new Vector3D(), 1.0f, 0.999f, true);
@@ -65,10 +56,8 @@ class Particle {
         m_linearDamping = damping;
         m_affectedByGravity = affectedByGravity;
         m_previousPosition = new Point3D(pos.getX(), pos.getY(), pos.getZ());
-        
-        if (m_affectedByGravity) {
-            m_acceleration = m_acceleration.add(new Vector3D(0.0f, -PhysicsConstants.GRAVITY, 0.0f));
-        }
+        // La gravité n'est PLUS ajoutée ici : elle vient du GravityGenerator (ForceGenerators.pde),
+        // enregistré dans le ForceRegistry. L'ajouter aussi ici la comptait deux fois.
     }
 
     Point3D getPosition() { return m_position; }
