@@ -46,8 +46,6 @@ class ConstantForceGenerator implements ForceGenerator
         // addForce only reads values, so passing the internal vector is safe
         particle.addForce(m_force);
     }
-    
-
 }
 
 
