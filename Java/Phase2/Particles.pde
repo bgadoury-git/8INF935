@@ -20,30 +20,11 @@ class Particle {
     
     private Material m_material = Material.STEEL;
 
-    // --- ACCUMULATEUR DE FORCES (D'Alembert) ---
-    // Somme des forces ajoutees par les generateurs pendant le pas courant.
-    // Remise a zero apres chaque integration (voir updateParticles).
-    private Vector3D m_forceAccum = new Vector3D();
-
     Vector3D computeAcceleration() {
         if (m_inverseMass <= 0.0f) {
             return new Vector3D();
         }
-        return m_acceleration.add(m_forceAccum.mult(m_inverseMass));
-    }
-
-    // --- API de l'accumulateur ---
-    void addForce(Vector3D force) { m_forceAccum = m_forceAccum.add(force); }
-    void clearForceAccumulator() { m_forceAccum = new Vector3D(); }
-    Vector3D getForceAccum() { return m_forceAccum; }
-
-    // Force totale actuellement appliquee a la particule : l'accumulateur
-    // PLUS la force equivalente a l'acceleration constante (m * a, ex: poids).
-    // Les generateurs qui dependent des autres forces (friction de Coulomb)
-    // doivent lire celle-ci, peu importe que la gravite soit encore "cuite"
-    // dans m_acceleration ou deja migree vers un generateur.
-    Vector3D getAppliedForce() {
-        return m_forceAccum.add(m_acceleration.mult(getMass()));
+        return m_acceleration;
     }
 
     public Particle() {
@@ -101,24 +82,19 @@ class Particle {
     void applyVerletIntegration(float deltaTime) {
         if (m_inverseMass <= 0.0f) return;
 
-        // L'acceleration inclut maintenant les forces accumulees (friction, etc.),
-        // pas seulement l'acceleration constante m_acceleration.
-        Vector3D oldAcceleration = computeAcceleration();
-
         // 1. Drift (In-place mutation to avoid heap allocation)
         float halfDtSq = 0.5f * deltaTime * deltaTime;
-        m_position.setX(m_position.getX() + m_velocity.getX() * deltaTime + oldAcceleration.getX() * halfDtSq);
-        m_position.setY(m_position.getY() + m_velocity.getY() * deltaTime + oldAcceleration.getY() * halfDtSq);
-        m_position.setZ(m_position.getZ() + m_velocity.getZ() * deltaTime + oldAcceleration.getZ() * halfDtSq);
+        m_position.setX(m_position.getX() + m_velocity.getX() * deltaTime + m_acceleration.getX() * halfDtSq);
+        m_position.setY(m_position.getY() + m_velocity.getY() * deltaTime + m_acceleration.getY() * halfDtSq);
+        m_position.setZ(m_position.getZ() + m_velocity.getZ() * deltaTime + m_acceleration.getZ() * halfDtSq);
 
-        // Les forces sont constantes sur le pas (elles ont ete calculees avant l'integration)
-        Vector3D newAcceleration = oldAcceleration;
+        Vector3D newAcceleration = computeAcceleration(); 
 
         // 2. Kick
         float halfDt = 0.5f * deltaTime;
-        m_velocity.setX(m_velocity.getX() + (oldAcceleration.getX() + newAcceleration.getX()) * halfDt);
-        m_velocity.setY(m_velocity.getY() + (oldAcceleration.getY() + newAcceleration.getY()) * halfDt);
-        m_velocity.setZ(m_velocity.getZ() + (oldAcceleration.getZ() + newAcceleration.getZ()) * halfDt);
+        m_velocity.setX(m_velocity.getX() + (m_acceleration.getX() + newAcceleration.getX()) * halfDt);
+        m_velocity.setY(m_velocity.getY() + (m_acceleration.getY() + newAcceleration.getY()) * halfDt);
+        m_velocity.setZ(m_velocity.getZ() + (m_acceleration.getZ() + newAcceleration.getZ()) * halfDt);
 
         // 3. Time-corrected damping
         float dampingFactor = (float)Math.pow(m_linearDamping, deltaTime);
