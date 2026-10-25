@@ -10,6 +10,7 @@ class Tests {
         testPolar();
         testParticle();
         testSprings(); 
+        testFriction();
         testForceAccumulator();
         testForceGeneratorInterface();
         testForceRegistry();
@@ -23,19 +24,15 @@ class Tests {
     void testVector3D() {
         boolean passed = true;
         
-        // Init & Getters
         Vector3D v1 = new Vector3D(1.0f, 2.0f, 3.0f);
         passed &= expect(v1.getX() == 1.0f && v1.getY() == 2.0f && v1.getZ() == 3.0f, "Vector Initialization and Getters");
         
-        // Setters
         v1.setX(4.0f); v1.setY(5.0f); v1.setZ(6.0f);
         passed &= expect(v1.getX() == 4.0f && v1.getY() == 5.0f && v1.getZ() == 6.0f, "Vector Setters");
 
-        // Length
         passed &= expect(Math.abs(new Vector3D(0.0f, 3.0f, 4.0f).length() - 5.0f) < 1e-5f, "Vector Length");
         passed &= expect(new Vector3D(0.0f, 3.0f, 4.0f).lengthSquared() == 25.0f, "Vector LengthSquared");
 
-        // Normalize
         Vector3D vToNorm = new Vector3D(0.0f, 3.0f, 4.0f);
         float len = vToNorm.normalize();
         passed &= expect(Math.abs(len - 5.0f) < 1e-5f && Math.abs(vToNorm.getY() - 0.6f) < 1e-5f, "Vector normalize (in-place)");
@@ -43,7 +40,6 @@ class Tests {
         Vector3D norm = new Vector3D(3.0f, 4.0f, 0.0f).normalized();
         passed &= expect(Math.abs(norm.getX() - 0.6f) < 1e-5f, "Vector normalized (new instance)");
 
-        // Operations
         Vector3D d1 = new Vector3D(1.0f, 2.0f, 3.0f);
         Vector3D d2 = new Vector3D(4.0f, 5.0f, 6.0f);
         
@@ -60,12 +56,10 @@ class Tests {
         passed &= expect(d1.add(d2).equals(new Vector3D(5.0f, 7.0f, 9.0f)), "Vector add");
         passed &= expect(d2.sub(d1).equals(new Vector3D(3.0f, 3.0f, 3.0f)), "Vector sub");
 
-        // Equals & Formatting
         passed &= expect(d1.equals(new Vector3D(1.0f, 2.0f, 3.0f)), "Vector equals true");
         passed &= expect(!d1.equals(new Vector3D(1.0f, 2.0f, 4.0f)), "Vector equals false");
         passed &= expect(d1.toString().equals("Vector3D(1.0, 2.0, 3.0)"), "Vector toString format");
 
-        // Error handling
         try {
             d1.div(0.0f);
             passed &= expect(false, "Vector div(0) should throw exception");
@@ -80,26 +74,21 @@ class Tests {
     void testPoint3D() {
         boolean passed = true;
         
-        // Init & Getters
         Point3D p1 = new Point3D(1.0f, 2.0f, 3.0f);
         passed &= expect(p1.getX() == 1.0f && p1.getY() == 2.0f && p1.getZ() == 3.0f, "Point3D Init and Getters");
         
-        // Setters
         p1.setX(4.0f); p1.setY(5.0f); p1.setZ(6.0f);
         passed &= expect(p1.getX() == 4.0f && p1.getY() == 5.0f && p1.getZ() == 6.0f, "Point3D Setters");
 
-        // Distance
         Point3D pA = new Point3D(0.0f, 0.0f, 0.0f);
         Point3D pB = new Point3D(0.0f, 3.0f, 4.0f);
         passed &= expect(Math.abs(pA.distanceTo(pB) - 5.0f) < 1e-5f, "Point3D distanceTo");
         passed &= expect(pA.distanceSquaredTo(pB) == 25.0f, "Point3D distanceSquaredTo");
 
-        // Operations
         passed &= expect(pA.add(new Vector3D(1.0f, 2.0f, 3.0f)).equals(new Point3D(1.0f, 2.0f, 3.0f)), "Point3D add(Vector)");
         passed &= expect(pB.sub(new Vector3D(0.0f, 3.0f, 4.0f)).equals(new Point3D(0.0f, 0.0f, 0.0f)), "Point3D sub(Vector)");
         passed &= expect(pB.sub(pA).equals(new Vector3D(0.0f, 3.0f, 4.0f)), "Point3D sub(Point)");
 
-        // Equals & Formatting
         passed &= expect(pB.equals(new Point3D(0.0f, 3.0f, 4.0f)), "Point3D equals true");
         passed &= expect(!pB.equals(new Point3D(0.0f, 3.0f, 5.0f)), "Point3D equals false");
         passed &= expect(pB.toString().equals("Point3D(0.0, 3.0, 4.0)"), "Point3D toString format");
@@ -107,25 +96,22 @@ class Tests {
         if (passed) println("Point3D: All tests passed!");
     }
 
-    // --- Polar Tests (MathHelpers + Integration) ---
+    // --- Polar Tests ---
     void testPolar() {
         boolean passed = true;
         float pi = (float)Math.PI;
 
-        // Vector3D Polar -> Cartesian
         Vector3D v = new Vector3D(new Polar(10.0f, 0.0f, 0.0f));
         passed &= expect(v.equals(new Vector3D(0.0f, 0.0f, 10.0f)), "Polar Constructor (+Z Forward)");
 
         v.setPolar(5.0f, pi / 2.0f, 0.0f);
         passed &= expect(v.equals(new Vector3D(5.0f, 0.0f, 0.0f)), "Polar setPolar (+X Right)");
 
-        // Cartesian -> Polar
         Vector3D vUp = new Vector3D(0.0f, 4.0f, 0.0f);
         Polar pUp = vUp.getPolar();
         passed &= expect(MathHelpers.equalComponents(pUp.radius, 4.0f) && 
                          MathHelpers.equalComponents(pUp.elevation, pi / 2.0f), "Polar getPolar (+Y Up)");
 
-        // Round-trip conversion (Point3D)
         float origRadius = 7.5f;
         float origAzimuth = 0.785398f;  
         float origElevation = 0.523599f;
@@ -146,12 +132,8 @@ class Tests {
         passed &= expect(p.getPosition().equals(new Point3D(0,0,0)), "Particle Default Init");
         
         Particle grav = new Particle(new Point3D(), new Vector3D(), new Vector3D(1.0f, 2.0f, 3.0f), 1.0f, 0.999f, true);
-        //float expectedYWithGravity = 2.0f - PhysicsConstants.GRAVITY;
-        //passed &= expect(Math.abs(grav.getAcceleration().getY() - expectedYWithGravity) < 1e-5f, "Particle Gravity");
-        // Gravity now comes from GravityGenerator: the constructor only stores the flag, constant acceleration is untouched
         passed &= expect(Math.abs(grav.getAcceleration().getY() - 2.0f) < 1e-5f, "Gravity flag does not alter constant acceleration");
         passed &= expect(grav.getAffectedByGravity(), "Gravity flag stored");
-
         
         Particle noMass = new Particle(new Point3D(10,20,30), new Vector3D(100,100,100), new Vector3D(), 0.0f, 1.0f, false);
         noMass.applyVerletIntegration(0.1f);
@@ -160,7 +142,7 @@ class Tests {
         if (passed) println("Particle: All tests passed!");
     }
 
-  // --- Spring Tests ---
+    // --- Spring Tests ---
     boolean near(float a, float b) { return Math.abs(a - b) < 1e-3f; }
 
     Particle springTestParticle(float x, float y, float z) {
@@ -193,19 +175,23 @@ class Tests {
         passed &= expect(a.getForceAccumulator().lengthSquared() == 0.0f, "Beyond elastic limit: no spring force (cable)");
         a.clearAccumulator();
 
-        ArrayList<ForceBinding> savedForces = new ArrayList<ForceBinding>(activeForces);
-        activeForces.clear();
+        int initialForces = forceRegistry.size();
         Particle la = springTestParticle(0, 0, 0);
         Particle lb = springTestParticle(10, 0, 0);
         ElasticLink link = new ElasticLink(la, lb, 10.0f, 2.0f, 4.0f);
-        passed &= expect(activeForces.size() == 2, "Elastic link: one force per particle");
+        passed &= expect(forceRegistry.size() == initialForces + 2, "Elastic link: one force per particle");
+        
         ArrayList<Particle> savedParticles = new ArrayList<Particle>(particles);
-        particles.clear(); // on isole le test des particules du jeu
+        particles.clear(); 
+        particles.add(la);
+        particles.add(lb);
         resolveCollisionsAndConstraints(1.0f / 60.0f);
+        particles.clear();
         particles.addAll(savedParticles);
+        
         passed &= expect(near(link.length(), 4.0f), "Elastic link behaves like a cable beyond its limit");
         link.breakLink();
-        passed &= expect(activeForces.size() == 0 && !cables.contains(link.cable), "Elastic link can be broken");
+        passed &= expect(forceRegistry.size() == initialForces && !cables.contains(link.cable), "Elastic link can be broken");
 
         Particle e = springTestParticle(0, -5, 0);
         new ParticleAnchoredSpring(new Point3D(0, 0, 0), 4.0f, 3.0f).updateForce(e, 0.016f);
@@ -238,7 +224,7 @@ class Tests {
 
         float dt = 1.0f / 60.0f;
         float k = 800.0f, mass = 2.0f;
-        float w0 = (float)Math.sqrt(k / mass);                   // ω0 = 20 rad/s
+        float w0 = (float)Math.sqrt(k / mass);                 
         Vector3D xs = dampedHarmonicPosition(new Vector3D(1, 0, 0), new Vector3D(), k, 0.0f, mass, 0.1f);
         passed &= expect(near(xs.getX(), (float)Math.cos(w0 * 0.1f)), "Undamped SHM: x(t) = A cos(w0 t)");
         float zeta = 0.5f, c = zeta * 2.0f * (float)Math.sqrt(mass * k);
@@ -251,7 +237,6 @@ class Tests {
         passed &= expect(near(xs.getX(), (float)((1 + w0 * 0.1) * Math.exp(-w0 * 0.1))), "Critically damped SHM formula");
         passed &= expect(dampedHarmonicPosition(new Vector3D(1, 0, 0), new Vector3D(), k, 3 * c, mass, 0.1f) == null, "Overdamped not handled");
 
-        // Ressort rigide : après un pas de Verlet, la particule est à x(dt)
         Particle stiff = new Particle(new Point3D(1, 0, 0), new Vector3D(), new Vector3D(), mass, 1.0f, false);
         float cStiff = 0.5f * 2.0f * (float)Math.sqrt(mass * k);
         new ParticleStiffSpring(new Point3D(0, 0, 0), k, cStiff).updateForce(stiff, dt);
@@ -259,53 +244,178 @@ class Tests {
         float accelX = stiff.getForceAccumulator().getX() * stiff.getInverseMass();
         passed &= expect(near(1.0f + accelX * dt * dt, expectedStiff), "Stiff spring follows damped harmonic motion");
 
-        Particle m = springTestParticle(0, 0, 0);
-        Particle n = springTestParticle(4, 0, 0);
-        connectWithSpring(m, n, 10.0f, 2.0f);
-        passed &= expect(activeForces.size() == 2, "connectWithSpring: one force per particle");
-        ParticleForceRegistry reg = new ParticleForceRegistry();
-        applyForces(reg, dt);
-        passed &= expect(reg.size() == 0, "Registry cleared each frame");
-        passed &= expect(near(m.getForceAccumulator().getX(), 20.0f) && near(n.getForceAccumulator().getX(), -20.0f),
+        Particle mPart = springTestParticle(0, 0, 0);
+        Particle nPart = springTestParticle(4, 0, 0);
+        ParticleSpring sm = new ParticleSpring(nPart, 10.0f, 2.0f);
+        ParticleSpring sn = new ParticleSpring(mPart, 10.0f, 2.0f);
+        
+        ForceRegistry testReg = new ForceRegistry();
+        testReg.add(mPart, sm);
+        testReg.add(nPart, sn);
+        
+        passed &= expect(testReg.size() == 2, "Two-way spring simulation: one force per particle");
+        testReg.updateForces(dt);
+        
+        passed &= expect(near(mPart.getForceAccumulator().getX(), 20.0f) && near(nPart.getForceAccumulator().getX(), -20.0f),
                          "Two-way spring: equal and opposite forces");
-        m.integrate(dt, IntegrationMode.Euler);
-        passed &= expect(m.getForceAccumulator().lengthSquared() == 0.0f, "Accumulator cleared after integration");
-        passed &= expect(m.getVelocity().getX() > 0.0f, "Spring force changes velocity");
-        activeForces.clear();
-        activeForces.addAll(savedForces);
+        mPart.integrate(dt, IntegrationMode.Euler);
+        passed &= expect(mPart.getForceAccumulator().lengthSquared() == 0.0f, "Accumulator cleared after integration");
+        passed &= expect(mPart.getVelocity().getX() > 0.0f, "Spring force changes velocity");
 
         if (passed) println("Springs: All tests passed!");
     }
 
-    boolean expect(boolean condition, String name) {
-        if (!condition) {
-            println("  [FAILED] " + name);
-        }
-        return condition;
+
+    // --- Friction Tests ---
+    class SlideResult {
+        float x;            
+        float vx;           
+        float minVx;        
+        ContactState state; 
     }
-    
-    
+
+    SlideResult simulateBlock(IntegrationMode mode, float mass, float v0,
+                              float pushX, float pushY, float seconds,
+                              float mu_s, float mu_k) {
+        float dt = PhysicsConstants.FIXED_TIMESTEP;
+        Particle block = new Particle(new Point3D(0.0f, 1.0f, 0.0f), new Vector3D(v0, 0.0f, 0.0f),
+                                      new Vector3D(), mass, 1.0f, false);
+        PlaneSurface plane = new PlaneSurface(new Point3D(0.0f, 0.0f, 0.0f), new Vector3D(0.0f, 1.0f, 0.0f));
+        CoulombFrictionGenerator coulomb = new CoulombFrictionGenerator(plane, mu_s, mu_k);
+
+        ForceRegistry registry = new ForceRegistry();
+        registry.add(block, new TestConstantForce(new Vector3D(0.0f, -mass * PhysicsConstants.GRAVITY, 0.0f)));
+        registry.add(block, new TestConstantForce(new Vector3D(pushX, pushY, 0.0f)));
+        registry.add(block, coulomb);
+
+        SlideResult r = new SlideResult();
+        r.minVx = v0;
+        int steps = Math.round(seconds / dt);
+        for (int i = 0; i < steps; i++) {
+            registry.updateForces(dt);
+            block.integrate(dt, mode);
+            block.clearAccumulator(); // Updated to standard naming
+            block.getPosition().setY(1.0f);
+            block.setVelocity(new Vector3D(block.getVelocity().getX(), 0.0f, 0.0f));
+            r.minVx = Math.min(r.minVx, block.getVelocity().getX());
+        }
+        r.x = block.getPosition().getX();
+        r.vx = block.getVelocity().getX();
+        r.state = coulomb.getState();
+        return r;
+    }
+
+    boolean testFrictionAllModes(IntegrationMode mode) {
+        boolean passed = true;
+        String tag = " [" + mode.name() + "]";
+        float g = PhysicsConstants.GRAVITY;
+        float m = 2.0f;
+        float mu_s = 0.6f;
+        float mu_k = 0.4f;
+        float N = m * g;
+
+        SlideResult st = simulateBlock(mode, m, 0.0f, 0.5f * mu_s * N, 0.0f, 2.0f, mu_s, mu_k);
+        passed &= expect(Math.abs(st.x) < 1e-3f && Math.abs(st.vx) < 1e-3f, "Coulomb static: block stays at rest below mu_s*N" + tag);
+        passed &= expect(st.state == ContactState.Static, "Coulomb static: state is Static" + tag);
+
+        float push = 20.0f;
+        float aExpected = (push - mu_k * N) / m;
+        SlideResult mv = simulateBlock(mode, m, 0.0f, push, 0.0f, 1.0f, mu_s, mu_k);
+        passed &= expect(Math.abs(mv.vx - aExpected * 1.0f) < 0.02f * aExpected, "Coulomb kinetic: acceleration (F - mu_k N)/m" + tag);
+        passed &= expect(mv.state == ContactState.Sliding, "Coulomb kinetic: state is Sliding" + tag);
+
+        float v0 = 5.0f;
+        float expectedDistance = (v0 * v0) / (2.0f * mu_k * g);
+        SlideResult br = simulateBlock(mode, m, v0, 0.0f, 0.0f, 3.0f, mu_s, mu_k);
+        passed &= expect(Math.abs(br.x - expectedDistance) < 0.05f * expectedDistance, "Coulomb braking distance v0^2/(2 mu_k g)" + tag);
+        passed &= expect(Math.abs(br.vx) < 1e-3f, "Coulomb braking: block fully stops" + tag);
+        passed &= expect(br.minVx >= -1e-4f, "Coulomb braking: velocity never reverses (no jitter)" + tag);
+        passed &= expect(br.state == ContactState.Static, "Coulomb braking: ends in Static state" + tag);
+
+        SlideResult up = simulateBlock(mode, m, v0, 0.0f, 100.0f, 0.5f, mu_s, mu_k);
+        passed &= expect(Math.abs(up.vx - v0) < 1e-3f, "Coulomb: no friction when pulled off the surface" + tag);
+
+        float dt = PhysicsConstants.FIXED_TIMESTEP;
+        Particle fall = new Particle(new Point3D(), new Vector3D(), new Vector3D(), 1.0f, 1.0f, false);
+        ForceRegistry dragRegistry = new ForceRegistry();
+        dragRegistry.add(fall, new TestConstantForce(new Vector3D(10.0f, 0.0f, 0.0f)));
+        dragRegistry.add(fall, new DragForceGenerator(1.0f, 1.0f));
+        for (int i = 0; i < 60 * 15; i++) {
+            dragRegistry.updateForces(dt);
+            fall.integrate(dt, mode);
+            fall.clearAccumulator(); // Updated to standard naming
+        }
+        float terminal = (-1.0f + (float)Math.sqrt(41.0f)) / 2.0f; 
+        passed &= expect(Math.abs(fall.getVelocity().getX() - terminal) < 0.01f * terminal, "Drag terminal velocity (k1 + k2)" + tag);
+
+        return passed;
+    }
+
+    void testFriction() {
+        boolean passed = true;
+        float dt = PhysicsConstants.FIXED_TIMESTEP;
+
+        Particle p = new Particle(new Point3D(), new Vector3D(10.0f, 0.0f, 0.0f), new Vector3D(), 1.0f, 1.0f, false);
+        new DragForceGenerator(0.5f, 0.1f).updateForce(p, dt);
+        passed &= expect(p.getForceAccumulator().equals(new Vector3D(-15.0f, 0.0f, 0.0f)), "Drag force = -(k1|v| + k2|v|^2) v^"); // Updated
+
+        Particle still = new Particle();
+        new DragForceGenerator(1.0f, 1.0f).updateForce(still, dt);
+        passed &= expect(still.getForceAccumulator().length() == 0.0f, "Drag is zero at rest"); // Updated
+
+        Particle fast = new Particle(new Point3D(), new Vector3D(10.0f, 0.0f, 0.0f), new Vector3D(), 2.0f, 1.0f, false);
+        new DragForceGenerator(1.0e6f, 0.0f).updateForce(fast, dt);
+        float maxStop = 2.0f * 10.0f / dt; 
+        passed &= expect(Math.abs(fast.getForceAccumulator().length() - maxStop) < 1e-2f * maxStop, "Drag is clamped to m|v|/dt"); // Updated
+        fast.integrate(dt, IntegrationMode.Euler);
+        passed &= expect(fast.getVelocity().getX() > -1e-3f, "Drag never reverses velocity");
+
+        Particle wall = new Particle(new Point3D(), new Vector3D(10.0f, 0.0f, 0.0f), new Vector3D(), 0.0f, 1.0f, false);
+        new DragForceGenerator(1.0f, 1.0f).updateForce(wall, dt);
+        passed &= expect(wall.getForceAccumulator().length() == 0.0f, "Drag ignores infinite-mass particles"); // Updated
+
+        Particle off = new Particle(new Point3D(), new Vector3D(10.0f, 0.0f, 0.0f), new Vector3D(), 1.0f, 1.0f, false);
+        DragForceGenerator disabled = new DragForceGenerator(1.0f, 1.0f);
+        disabled.setEnabled(false);
+        disabled.updateForce(off, dt);
+        passed &= expect(off.getForceAccumulator().length() == 0.0f, "Disabled generator adds no force"); // Updated
+
+        Particle air = new Particle(new Point3D(0.0f, 5.0f, 0.0f), new Vector3D(5.0f, 0.0f, 0.0f), new Vector3D(), 1.0f, 1.0f, false);
+        air.addForce(new Vector3D(0.0f, -PhysicsConstants.GRAVITY, 0.0f));
+        CoulombFrictionGenerator airCoulomb = new CoulombFrictionGenerator(
+            new PlaneSurface(new Point3D(), new Vector3D(0.0f, 1.0f, 0.0f)), 0.6f, 0.4f);
+        airCoulomb.updateForce(air, dt);
+        passed &= expect(airCoulomb.getState() == ContactState.Airborne, "Coulomb: Airborne when not touching");
+        passed &= expect(Math.abs(air.getForceAccumulator().getX()) < 1e-6f, "Coulomb: no friction when Airborne"); // Updated
+
+        passed &= expect(new CoulombFrictionGenerator(null, 0.3f, 0.9f).getKineticCoeff() <= 0.3f, "Coulomb: mu_k clamped to mu_s");
+
+        for (IntegrationMode mode : IntegrationMode.values()) {
+            passed &= testFrictionAllModes(mode);
+        }
+
+        if (passed) println("Friction: All tests passed!");
+    }
+
+
+    // --- Force Accumulator and Generator Tests ---
     void testForceAccumulator() {
         boolean passed = true;
 
-        // Superposition (mass 2)
         Particle pA = new Particle(new Point3D(), new Vector3D(), new Vector3D(), 2.0f, 1.0f, false);
         pA.addForce(new Vector3D(0.0f, 10.0f, 0.0f));
         pA.addForce(new Vector3D(4.0f, 0.0f, -2.0f));
         passed &= expect(pA.getTotalAcceleration().equals(new Vector3D(2.0f, 5.0f, -1.0f)), "Force superposition");
 
-        // Cleared after integrate (explicit Euler moves with old velocity)
         pA.integrate(0.1f, IntegrationMode.Euler);
         passed &= expect(pA.getPosition().equals(new Point3D(0.0f, 0.0f, 0.0f)), "Euler position uses old velocity");
         passed &= expect(pA.getVelocity().equals(new Vector3D(0.2f, 0.5f, -0.1f)), "Euler velocity from net force");
         passed &= expect(pA.getTotalAcceleration().equals(new Vector3D()), "Accumulator cleared after integrate");
 
-        // No force: no further acceleration
         pA.integrate(0.1f, IntegrationMode.Euler);
         passed &= expect(pA.getPosition().equals(new Point3D(0.02f, 0.05f, -0.01f)), "No force: position advances");
         passed &= expect(pA.getVelocity().equals(new Vector3D(0.2f, 0.5f, -0.1f)), "No force: velocity unchanged");
 
-        // Aliasing: same vector twice, argument untouched
         Particle pD = new Particle(new Point3D(), new Vector3D(), new Vector3D(), 1.0f, 1.0f, false);
         Vector3D g = new Vector3D(0.0f, 10.0f, 0.0f);
         pD.addForce(g);
@@ -313,7 +423,6 @@ class Tests {
         passed &= expect(pD.getTotalAcceleration().equals(new Vector3D(0.0f, 20.0f, 0.0f)), "Same force added twice");
         passed &= expect(g.equals(new Vector3D(0.0f, 10.0f, 0.0f)), "addForce does not modify its argument");
 
-        // Infinite mass stays still, accumulator still cleared
         Particle pE = new Particle(new Point3D(), new Vector3D(), new Vector3D(), 0.0f, 1.0f, false);
         pE.addForce(new Vector3D(100.0f, 100.0f, 100.0f));
         pE.integrate(0.1f, IntegrationMode.PositionVerlet);
@@ -321,14 +430,11 @@ class Tests {
         pE.setInverseMass(1.0f);
         passed &= expect(pE.getTotalAcceleration().equals(new Vector3D()), "Infinite mass accumulator cleared");
 
-        // Constant acceleration plus force (twice the weight, upward)
-        // Gravity generator plus thrust (twice the weight, upward)
         Particle pF = new Particle(new Point3D(), new Vector3D(), new Vector3D(), 2.0f, 1.0f, true);
         new GravityGenerator(new Vector3D(0.0f, -PhysicsConstants.GRAVITY, 0.0f)).updateForce(pF, 0.1f);
         pF.addForce(new Vector3D(0.0f, 39.24f, 0.0f));
         passed &= expect(pF.getTotalAcceleration().equals(new Vector3D(0.0f, 9.81f, 0.0f)), "Gravity force plus thrust");
 
-        // Velocity Verlet drift and kick both use the force
         Particle pG = new Particle(new Point3D(), new Vector3D(), new Vector3D(), 1.0f, 1.0f, false);
         pG.addForce(new Vector3D(2.0f, 0.0f, 0.0f));
         pG.integrate(0.5f, IntegrationMode.VelocityVerlet);
@@ -338,15 +444,12 @@ class Tests {
         if (passed) println("Force Accumulator: All tests passed!");
     }
     
-    void testForceGeneratorInterface() 
-    {
+    void testForceGeneratorInterface() {
         boolean passed = true;
         
-        ForceGenerator upward = new ForceGenerator()
-        {
+        ForceGenerator upward = new ForceGenerator() {
             @Override
-            public void updateForce(Particle particle, float deltaTime)
-            {
+            public void updateForce(Particle particle, float deltaTime) {
                 particle.addForce(new Vector3D(0.0f, 5.0f, 0.0f));
             }
         };
@@ -362,7 +465,6 @@ class Tests {
         boolean passed = true;
         float dt = PhysicsConstants.FIXED_TIMESTEP;
 
-        // Two test generators: 5 N up, 3 N right
         ForceGenerator up5 = new ForceGenerator() {
             @Override
             public void updateForce(Particle particle, float dt) {
@@ -380,26 +482,22 @@ class Tests {
         Particle p2 = new Particle(new Point3D(), new Vector3D(), new Vector3D(), 1.0f, 1.0f, false);
         ForceRegistry reg = new ForceRegistry();
 
-        // Register: two forces on p1 (adjacent, to test reverse removal), p2 shares up5; duplicate ignored
         reg.add(p1, up5);
         reg.add(p1, right3);
         reg.add(p2, up5);
         reg.add(p1, up5);
         passed &= expect(reg.size() == 3, "Registry ignores duplicate pair");
 
-        // Run: p1 = (3,5,0), p2 = (0,5,0)
         reg.updateForces(dt);
         passed &= expect(p1.getTotalAcceleration().equals(new Vector3D(3.0f, 5.0f, 0.0f)), "Registry applies all generators to p1");
         passed &= expect(p2.getTotalAcceleration().equals(new Vector3D(0.0f, 5.0f, 0.0f)), "Shared generator serves p2");
 
-        // Remove one pair: p1 keeps only the rightward force
         p1.clearAccumulator(); p2.clearAccumulator();
         reg.remove(p1, up5);
         reg.updateForces(dt);
         passed &= expect(reg.size() == 2, "Remove one pair");
         passed &= expect(p1.getTotalAcceleration().equals(new Vector3D(3.0f, 0.0f, 0.0f)), "Removed generator no longer applies");
 
-        // Remove particle: p1 gets nothing, p2 unaffected
         p1.clearAccumulator(); p2.clearAccumulator();
         reg.add(p1, up5);
         reg.removeParticle(p1);
@@ -408,11 +506,9 @@ class Tests {
         passed &= expect(p1.getTotalAcceleration().equals(new Vector3D()), "Removed particle receives no force");
         passed &= expect(p2.getTotalAcceleration().equals(new Vector3D(0.0f, 5.0f, 0.0f)), "Other particle unaffected");
 
-        // Clear
         reg.clear();
         passed &= expect(reg.size() == 0, "Clear registry");
 
-        // null fails fast
         try {
             reg.add(null, up5);
             passed &= expect(false, "Registry add(null) should throw");
@@ -428,7 +524,6 @@ class Tests {
         float dt = PhysicsConstants.FIXED_TIMESTEP;
         ConstantForceGenerator wind = new ConstantForceGenerator(new Vector3D(10.0f, 0.0f, 0.0f));
 
-        // Same force: 1 kg gets 10, 5 kg gets 2
         Particle light = new Particle(new Point3D(), new Vector3D(), new Vector3D(), 1.0f, 1.0f, false);
         Particle heavy = new Particle(new Point3D(), new Vector3D(), new Vector3D(), 5.0f, 1.0f, false);
         wind.updateForce(light, dt);
@@ -436,13 +531,11 @@ class Tests {
         passed &= expect(light.getTotalAcceleration().equals(new Vector3D(10.0f, 0.0f, 0.0f)), "Constant force on 1 kg");
         passed &= expect(heavy.getTotalAcceleration().equals(new Vector3D(2.0f, 0.0f, 0.0f)), "Constant force on 5 kg is weaker");
 
-        // Inactive applies nothing
         light.clearAccumulator();
         wind.setActive(false);
         wind.updateForce(light, dt);
         passed &= expect(light.getTotalAcceleration().equals(new Vector3D()), "Inactive generator applies no force");
 
-        // setForce copies values
         Vector3D f = new Vector3D(0.0f, 0.0f, 3.0f);
         wind.setForce(f);
         f.setZ(100.0f);
@@ -450,11 +543,9 @@ class Tests {
         wind.updateForce(light, dt);
         passed &= expect(light.getTotalAcceleration().equals(new Vector3D(0.0f, 0.0f, 3.0f)), "setForce copies the vector");
 
-        // getForce returns a copy; internal force unchanged after applying
         wind.getForce().setX(999.0f);
         passed &= expect(wind.getForce().equals(new Vector3D(0.0f, 0.0f, 3.0f)), "getForce returns a copy");
 
-        // Infinite mass receives no force
         Particle fixed = new Particle(new Point3D(), new Vector3D(), new Vector3D(), 0.0f, 1.0f, false);
         wind.updateForce(fixed, dt);
         fixed.setInverseMass(1.0f);
@@ -467,7 +558,6 @@ class Tests {
         boolean passed = true;
         float dt = PhysicsConstants.FIXED_TIMESTEP;
 
-        // Mass-independent: 2 kg and 5 kg get the same acceleration
         Vector3D src = new Vector3D(0.0f, -9.81f, 0.0f);
         GravityGenerator gravity = new GravityGenerator(src);
         Particle light = new Particle(new Point3D(), new Vector3D(), new Vector3D(), 2.0f, 1.0f, true);
@@ -477,19 +567,16 @@ class Tests {
         passed &= expect(light.getTotalAcceleration().equals(new Vector3D(0.0f, -9.81f, 0.0f)), "Gravity on 2 kg gives g");
         passed &= expect(heavy.getTotalAcceleration().equals(new Vector3D(0.0f, -9.81f, 0.0f)), "Gravity on 5 kg gives g");
 
-        // Defensive copy: changing the source vector has no effect
         src.setY(-100.0f);
         Particle p = new Particle(new Point3D(), new Vector3D(), new Vector3D(), 1.0f, 1.0f, true);
         gravity.updateForce(p, dt);
         passed &= expect(p.getTotalAcceleration().equals(new Vector3D(0.0f, -9.81f, 0.0f)), "Gravity vector defensively copied");
 
-        // Infinite mass receives no force
         Particle fixed = new Particle(new Point3D(), new Vector3D(), new Vector3D(), 0.0f, 1.0f, true);
         gravity.updateForce(fixed, dt);
         fixed.setInverseMass(1.0f);
         passed &= expect(fixed.getTotalAcceleration().equals(new Vector3D()), "Gravity skips infinite mass");
 
-        // Last acceleration survives integration while the accumulator is cleared
         Particle q = new Particle(new Point3D(), new Vector3D(), new Vector3D(), 2.0f, 1.0f, true);
         gravity.updateForce(q, dt);
         q.addForce(new Vector3D(4.0f, 0.0f, 0.0f));
@@ -509,12 +596,10 @@ class Tests {
         passed &= expect(p.getVelocity().equals(new Vector3D(2.0f, 0.0f, -1.0f)), "Impulse changes velocity by J/m");
         passed &= expect(p.getTotalAcceleration().equals(new Vector3D()), "Impulse bypasses the accumulator");
 
-        // Infinite mass unaffected
         Particle fixed = new Particle(new Point3D(), new Vector3D(), new Vector3D(), 0.0f, 1.0f, false);
         fixed.applyImpulse(new Vector3D(100.0f, 0.0f, 0.0f));
         passed &= expect(fixed.getVelocity().equals(new Vector3D()), "Impulse ignored for infinite mass");
 
-        // Position Verlet: impulse must survive the next integration
         Particle v = new Particle(new Point3D(), new Vector3D(), new Vector3D(), 1.0f, 1.0f, false);
         v.integrate(dt, IntegrationMode.PositionVerlet);
         v.applyImpulse(new Vector3D(3.0f, 0.0f, 0.0f));
@@ -546,5 +631,26 @@ class Tests {
         passed &= expect(fixed.getVelocity().equals(new Vector3D()), "Explosion ignores infinite mass");
 
         if (passed) println("Explosion: All tests passed!");
+    }
+    
+    boolean expect(boolean condition, String name) {
+        if (!condition) {
+            println("  [FAILED] " + name);
+        }
+        return condition;
+    }
+}
+
+// Generateur de test : applique une force constante
+class TestConstantForce implements ForceGenerator {
+    private Vector3D m_force;
+
+    public TestConstantForce(Vector3D force) {
+        m_force = force;
+    }
+
+    @Override
+    public void updateForce(Particle p, float dt) {
+        p.addForce(m_force);
     }
 }
