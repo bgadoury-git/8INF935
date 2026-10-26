@@ -236,6 +236,8 @@ void resetGame() {
         loneParticles.add(collectible);
     }
 
+    setupSpringDemos();
+
     for (Particle p : particles) {
         if (p.getAffectedByGravity()) {
             forceRegistry.add(p, gravityGenerator);
@@ -327,7 +329,7 @@ void updateBlobLogic() {
     }
     
     for (Particle p : particles) {
-        if (p.getInverseMass() > 0.0f && !blobParticles.contains(p)) {
+        if (p.getInverseMass() > 0.0f && !blobParticles.contains(p) && !isSpringDemoParticle(p)) {
             loneParticles.add(p);
         }
     }
@@ -484,6 +486,7 @@ void drawGameplay() {
     RenderCables();
     RenderSlopes();
     RenderRods();
+    drawSpringDemos();
     
     for (DrawableForceBinding df : drawableForces) {
         df.fg.draw(df.particle);
@@ -494,10 +497,11 @@ void drawGameplay() {
     renderHUD(); 
 }
 
-void RenderRods() {
-    for (Rod rod : rods) {
-        rod.draw();
-    }
+void renderHUD() { 
+    reset2DContext(); 
+    renderSpringDemoLabels(); 
+    renderScoreHUD(); 
+    renderSidePanel(); 
 }
 
 void updateParticles(float timestep) {
@@ -715,7 +719,6 @@ void reset2DContext() {
 }
 
 String formatWithCommas(int value) { return String.format("%,d", value); }
-void renderHUD() { reset2DContext(); renderScoreHUD(); renderSidePanel(); }
 
 void renderScoreHUD() {
     float cx = width / 2.0f;
