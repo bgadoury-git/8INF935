@@ -21,6 +21,7 @@ float camPitch = 0.5f; // Starts tilted slightly downward
 // --- Gameplay State ---
 ArrayList<Particle> particles = new ArrayList<Particle>();
 ArrayList<Cable> cables = new ArrayList<Cable>();
+ArrayList<Rod> rods = new ArrayList<Rod>();
 ArrayList<AnalyticalSlope> analyticalSlopes = new ArrayList<AnalyticalSlope>();
 
 // --- Blob Mechanics State ---
@@ -177,6 +178,41 @@ void resetGame() {
     PurpleSphere rollingBall = new PurpleSphere(p3, new Vector3D(0.0f, 0.0f, 0.0f));
     particles.add(rollingBall);
     loneParticles.add(rollingBall);
+    
+    // --- CABLE DEMO: 4 Appendices attached to the player ---
+    float appendDist = 3.0f;
+    for (int i = 0; i < 4; i++) {
+        float angle = i * HALF_PI;
+        float ax = player.getPosition().getX() + cos(angle) * appendDist;
+        float az = player.getPosition().getZ() + sin(angle) * appendDist;
+        float ay = player.getPosition().getY();
+        
+        BlueSphere appendix = new BlueSphere(new Point3D(ax, ay, az), new Vector3D());
+        particles.add(appendix);
+        loneParticles.add(appendix);
+        
+        // Create a visible cable constraint with a maximum length of 4.0 units
+        Cable armCable = new Cable(player, appendix, 4.0f);
+        armCable.visible = true;
+        cables.add(armCable);
+    }
+    
+    // --- RIGID ROD EXAMPLE (Dumbbell) ---
+    Point3D rPos1 = new Point3D(5.0f, 12.0f, -5.0f);
+    Point3D rPos2 = new Point3D(5.0f, 15.0f, -5.0f);
+    
+    // Spawn two heavy ores with opposing initial velocities to make them spin in the air
+    PurpleSphere rodEnd1 = new PurpleSphere(rPos1, new Vector3D(15.0f, 0.0f, 0.0f)); 
+    PurpleSphere rodEnd2 = new PurpleSphere(rPos2, new Vector3D(-15.0f, 0.0f, 0.0f));
+    
+    particles.add(rodEnd1);
+    particles.add(rodEnd2);
+    loneParticles.add(rodEnd1);
+    loneParticles.add(rodEnd2);
+    
+    // Create the fixed-length constraint between them
+    Rod rigidRod = new Rod(rodEnd1, rodEnd2, 3.0f);
+    rods.add(rigidRod);
 
     // Scatter collectible variety across the map
     for (int i = 0; i < 120; i++) {
@@ -447,6 +483,7 @@ void drawGameplay() {
     RenderParticles();
     RenderCables();
     RenderSlopes();
+    RenderRods();
     
     for (DrawableForceBinding df : drawableForces) {
         df.fg.draw(df.particle);
@@ -455,6 +492,12 @@ void drawGameplay() {
     if (showForceDebug) RenderForceDebug();
     
     renderHUD(); 
+}
+
+void RenderRods() {
+    for (Rod rod : rods) {
+        rod.draw();
+    }
 }
 
 void updateParticles(float timestep) {

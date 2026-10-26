@@ -28,6 +28,70 @@ class Cable {
     }
 }
 
+class Rod {
+    Particle p1;
+    Particle p2;
+    float fixedLength;
+    boolean visible;
+
+    public Rod(Particle p1, Particle p2, float fixedLength) {
+        this.p1 = p1;
+        this.p2 = p2;
+        this.fixedLength = fixedLength;
+        this.visible = true;
+    }
+    
+    void draw() {
+        if (!visible || p1 == null || p2 == null) return;
+        Point3D pos1 = p1.getPosition();
+        Point3D pos2 = p2.getPosition();
+        
+        // Render the rigid rod as a distinct thick silver bar
+        stroke(180, 180, 200); 
+        strokeWeight(6.0f);   
+        line(pos1.getX(), pos1.getY(), pos1.getZ(), pos2.getX(), pos2.getY(), pos2.getZ());
+        noStroke(); 
+    }
+}
+
+
+class AnalyticalSlope {
+    Point3D startPos;
+    float length;
+    float width;
+    float angleDeg;
+    float thickness = 0.5f;
+    Material material;
+    
+    Vector3D normal;
+
+    public AnalyticalSlope(Point3D startPos, float length, float width, float angleDeg, Material material) {
+        this.startPos = startPos;
+        this.length = length;
+        this.width = width;
+        this.angleDeg = angleDeg;
+        this.material = material;
+
+        float rad = radians(angleDeg);
+        float sinA = sin(rad);
+        float cosA = cos(rad);
+
+        this.normal = new Vector3D(-sinA, cosA, 0.0f).normalized();
+    }
+
+    void draw(processing.core.PApplet app) {
+        app.pushMatrix();
+        app.translate(startPos.getX(), startPos.getY(), startPos.getZ());
+        app.rotateZ(radians(angleDeg));
+        app.translate(length / 2.0f, -thickness / 2.0f, 0.0f);
+        
+        app.noStroke();
+        app.fill(120, 110, 100); 
+        app.box(length, thickness, width); 
+        app.popMatrix();
+    }
+}
+
 // Analytical slope collision resolver
 void resolveSlopeCollisions(AnalyticalSlope slope, float dt) {
     float halfWidth = slope.width / 2.0f;
@@ -199,6 +263,48 @@ void resolveCollisionsAndConstraints(float dt) {
 
             if (totalInvMass > 0.0f) {
                 float k = ((0.0f + 1.0f) * vRelDotN) / totalInvMass;
+                Vector3D constraintForce = n.mult(k).div(dt);
+                p1.addForce(constraintForce.negate());
+                p2.addForce(constraintForce);
+            }
+        }
+    }
+    
+    // 4. ROD CONSTRAINTS (Tige - rigid fixed length)
+    for (Rod rod : rods) {
+        Particle p1 = rod.p1;
+        Particle p2 = rod.p2;
+        
+        double dx = (double)p2.getPosition().getX() - (double)p1.getPosition().getX();
+        double dy = (double)p2.getPosition().getY() - (double)p1.getPosition().getY();
+        double dz = (double)p2.getPosition().getZ() - (double)p1.getPosition().getZ();
+        
+        double distSq = dx * dx + dy * dy + dz * dz;
+        double dist = Math.sqrt(distSq);
+        
+        // Only resolve if the distance deviates from the fixed length
+        if (Math.abs(dist - rod.fixedLength) > 0.00001 && dist > 0.00001) {
+            Vector3D n = new Vector3D((float)(dx / dist), (float)(dy / dist), (float)(dz / dist));
+            float d = (float)(dist - rod.fixedLength); 
+            
+            float invM1 = p1.getInverseMass();
+            float invM2 = p2.getInverseMass();
+            float totalInvMass = invM1 + invM2;
+
+            // Positional Correction: separate or pull together based inversely on their masses[cite: 14]
+            if (totalInvMass > 0.0f) {
+                float shiftP1 = d * (invM1 / totalInvMass);
+                float shiftP2 = d * (invM2 / totalInvMass);
+                p1.moveSilently(n.mult(shiftP1));
+                p2.moveSilently(n.mult(-shiftP2));
+            }
+
+            // Velocity Correction: essentially a resting contact that completely cancels relative velocity (e=0)[cite: 16]
+            Vector3D vRel = p1.getVelocity().sub(p2.getVelocity());
+            float vRelDotN = vRel.dot(n);
+            
+            if (totalInvMass > 0.0f) {
+                float k = (1.0f * vRelDotN) / totalInvMass;
                 Vector3D constraintForce = n.mult(k).div(dt);
                 p1.addForce(constraintForce.negate());
                 p2.addForce(constraintForce);
