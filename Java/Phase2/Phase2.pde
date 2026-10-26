@@ -236,7 +236,7 @@ void resetGame() {
         loneParticles.add(collectible);
     }
 
-    setupSpringDemos();
+    setupSpringFeatures();
 
     for (Particle p : particles) {
         if (p.getAffectedByGravity()) {
@@ -329,7 +329,7 @@ void updateBlobLogic() {
     }
     
     for (Particle p : particles) {
-        if (p.getInverseMass() > 0.0f && !blobParticles.contains(p) && !isSpringDemoParticle(p)) {
+        if (p.getInverseMass() > 0.0f && !blobParticles.contains(p) && !isSpringFeatureParticle(p)) {
             loneParticles.add(p);
         }
     }
@@ -486,7 +486,7 @@ void drawGameplay() {
     RenderCables();
     RenderSlopes();
     RenderRods();
-    drawSpringDemos();
+    drawSpringFeatures();
     
     for (DrawableForceBinding df : drawableForces) {
         df.fg.draw(df.particle);
@@ -495,13 +495,6 @@ void drawGameplay() {
     if (showForceDebug) RenderForceDebug();
     
     renderHUD(); 
-}
-
-void renderHUD() { 
-    reset2DContext(); 
-    renderSpringDemoLabels(); 
-    renderScoreHUD(); 
-    renderSidePanel(); 
 }
 
 void RenderRods() {
@@ -615,6 +608,7 @@ public void keyPressed() {
             frictionKeyDown = true;
             toggleFriction();
         }
+        if (k == 'h') toggleGrapple();
         if (k == 'm' && !materialKeyDown) {
             materialKeyDown = true;
             cyclePlayerMaterial();
@@ -725,6 +719,7 @@ void reset2DContext() {
 }
 
 String formatWithCommas(int value) { return String.format("%,d", value); }
+void renderHUD() { reset2DContext(); renderSpringFeatureLabels(); renderScoreHUD(); renderSidePanel(); }
 
 void renderScoreHUD() {
     float cx = width / 2.0f;
@@ -766,7 +761,8 @@ void renderSidePanel() {
         "End Game Early [Q]",
         "Debug arrow [F] | Explosion [E]",
         "Friction [C]: " + (frictionEnabled ? "ON" : "OFF"),
-        "Player material [M]"
+        "Player material [M]",
+        "Grappin [H] (près du poteau)"
     };
 
     float statLineHeight = 16.0f;
