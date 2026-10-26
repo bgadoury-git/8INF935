@@ -267,136 +267,281 @@ class Tests {
 
 
     // --- Friction Tests ---
-    class SlideResult {
-        float x;            
-        float vx;           
-        float minVx;        
-        ContactState state; 
-    }
+    // Chaque test compare la simulation à un résultat analytique connu.
+    // Les coefficients attendus sont lus dans PhysicsMaterials : les tests suivent la table.
 
-    SlideResult simulateBlock(IntegrationMode mode, float mass, float v0,
-                              float pushX, float pushY, float seconds,
-                              float mu_s, float mu_k) {
-        float dt = PhysicsConstants.FIXED_TIMESTEP;
-        Particle block = new Particle(new Point3D(0.0f, 1.0f, 0.0f), new Vector3D(v0, 0.0f, 0.0f),
-                                      new Vector3D(), mass, 1.0f, false);
-        PlaneSurface plane = new PlaneSurface(new Point3D(0.0f, 0.0f, 0.0f), new Vector3D(0.0f, 1.0f, 0.0f));
-        CoulombFrictionGenerator coulomb = new CoulombFrictionGenerator(plane, mu_s, mu_k);
-
-        ForceRegistry registry = new ForceRegistry();
-        registry.add(block, new TestConstantForce(new Vector3D(0.0f, -mass * PhysicsConstants.GRAVITY, 0.0f)));
-        registry.add(block, new TestConstantForce(new Vector3D(pushX, pushY, 0.0f)));
-        registry.add(block, coulomb);
-
-        SlideResult r = new SlideResult();
-        r.minVx = v0;
-        int steps = Math.round(seconds / dt);
-        for (int i = 0; i < steps; i++) {
-            registry.updateForces(dt);
-            block.integrate(dt, mode);
-            block.clearAccumulator(); // Updated to standard naming
-            block.getPosition().setY(1.0f);
-            block.setVelocity(new Vector3D(block.getVelocity().getX(), 0.0f, 0.0f));
-            r.minVx = Math.min(r.minVx, block.getVelocity().getX());
-        }
-        r.x = block.getPosition().getX();
-        r.vx = block.getVelocity().getX();
-        r.state = coulomb.getState();
-        return r;
-    }
-
-    boolean testFrictionAllModes(IntegrationMode mode) {
+    void testFriction() {
         boolean passed = true;
-        String tag = " [" + mode.name() + "]";
+        passed &= testContactFrictionGenerator();
+        passed &= testDragGenerator();
+        for (IntegrationMode mode : IntegrationMode.values()) {
+            passed &= testFrictionWithCollisions(mode);
+        }
+        if (passed) println("Friction: All tests passed!");
+    }
+
+    // Sol immobile (masse infinie) et bloc, pour tester le générateur sans le résolveur.
+    // Normale du contact : de p1 (sol) vers p2 (bloc), donc vers le haut.
+    Particle makeGround(Material material) {
+        Particle ground = new Particle(new Point3D(), new Vector3D(), new Vector3D(), 0.0f, 1.0f, false);
+        ground.setMaterial(material);
+        return ground;
+    }
+
+    Particle makeBlock(float mass, Vector3D velocity, Material material) {
+        Particle block = new Particle(new Point3D(0.0f, 1.0f, 0.0f), velocity, new Vector3D(), mass, 1.0f, false);
+        block.setMaterial(material);
+        return block;
+    }
+
+    boolean testContactFrictionGenerator() {
+        boolean passed = true;
+        float dt = PhysicsConstants.FIXED_TIMESTEP;
         float g = PhysicsConstants.GRAVITY;
         float m = 2.0f;
-        float mu_s = 0.6f;
-        float mu_k = 0.4f;
-        float N = m * g;
+        float normalForce = m * g; // contact au repos : le poids
+        Vector3D up = new Vector3D(0.0f, 1.0f, 0.0f);
 
-        SlideResult st = simulateBlock(mode, m, 0.0f, 0.5f * mu_s * N, 0.0f, 2.0f, mu_s, mu_k);
-        passed &= expect(Math.abs(st.x) < 1e-3f && Math.abs(st.vx) < 1e-3f, "Coulomb static: block stays at rest below mu_s*N" + tag);
-        passed &= expect(st.state == ContactState.Static, "Coulomb static: state is Static" + tag);
+        MaterialInteraction steelEarth = PhysicsMaterials.get(Material.STEEL, Material.EARTH);
+        float mu_s = steelEarth.staticFriction;
+        float mu_k = steelEarth.kineticFriction;
 
-        float push = 20.0f;
-        float aExpected = (push - mu_k * N) / m;
-        SlideResult mv = simulateBlock(mode, m, 0.0f, push, 0.0f, 1.0f, mu_s, mu_k);
-        passed &= expect(Math.abs(mv.vx - aExpected * 1.0f) < 0.02f * aExpected, "Coulomb kinetic: acceleration (F - mu_k N)/m" + tag);
-        passed &= expect(mv.state == ContactState.Sliding, "Coulomb kinetic: state is Sliding" + tag);
+        // 1. STATIQUE : F_stop = m*v_t/dt = 0.5 * mu_s * N  <=  mu_s * N -> la force arrête le bloc net
+        ContactFrictionGenerator gen = new ContactFrictionGenerator();
+        Particle ground = makeGround(Material.EARTH);
+        Particle block = makeBlock(m, new Vector3D(0.5f * mu_s * g * dt, 0.0f, 0.0f), Material.STEEL);
+        gen.applyContact(ground, block, up, normalForce, dt);
+        passed &= expect(Math.abs(block.getForceAccumulator().getX() + 0.5f * mu_s * normalForce) < 1e-3f, "Contact friction static: force = m*v_t/dt, opposite to sliding");
+        passed &= expect(gen.getState(block) == ContactState.Static, "Contact friction static: state is Static");
+        block.integrate(dt, IntegrationMode.Euler);
+        passed &= expect(Math.abs(block.getVelocity().getX()) < 1e-4f, "Contact friction static: slow block is stopped by the force");
 
-        float v0 = 5.0f;
-        float expectedDistance = (v0 * v0) / (2.0f * mu_k * g);
-        SlideResult br = simulateBlock(mode, m, v0, 0.0f, 0.0f, 3.0f, mu_s, mu_k);
-        passed &= expect(Math.abs(br.x - expectedDistance) < 0.05f * expectedDistance, "Coulomb braking distance v0^2/(2 mu_k g)" + tag);
-        passed &= expect(Math.abs(br.vx) < 1e-3f, "Coulomb braking: block fully stops" + tag);
-        passed &= expect(br.minVx >= -1e-4f, "Coulomb braking: velocity never reverses (no jitter)" + tag);
-        passed &= expect(br.state == ContactState.Static, "Coulomb braking: ends in Static state" + tag);
+        // 2. CINÉTIQUE : v_t = 5 m/s -> force = mu_k * N ; aucune composante normale
+        gen = new ContactFrictionGenerator();
+        ground = makeGround(Material.EARTH);
+        block = makeBlock(m, new Vector3D(5.0f, -1.0f, 0.0f), Material.STEEL);
+        gen.applyContact(ground, block, up, normalForce, dt);
+        passed &= expect(Math.abs(block.getForceAccumulator().getX() + mu_k * normalForce) < 1e-3f, "Contact friction kinetic: force = mu_k * N");
+        passed &= expect(Math.abs(block.getForceAccumulator().getY()) < 1e-6f, "Contact friction: no normal component");
+        passed &= expect(gen.getState(block) == ContactState.Sliding, "Contact friction kinetic: state is Sliding");
 
-        SlideResult up = simulateBlock(mode, m, v0, 0.0f, 100.0f, 0.5f, mu_s, mu_k);
-        passed &= expect(Math.abs(up.vx - v0) < 1e-3f, "Coulomb: no friction when pulled off the surface" + tag);
+        // 3. LA TABLE EST UTILISÉE : un bloc de caoutchouc freine plus qu'un bloc d'acier
+        MaterialInteraction rubberEarth = PhysicsMaterials.get(Material.RUBBER, Material.EARTH);
+        gen = new ContactFrictionGenerator();
+        ground = makeGround(Material.EARTH);
+        Particle rubber = makeBlock(m, new Vector3D(5.0f, 0.0f, 0.0f), Material.RUBBER);
+        gen.applyContact(ground, rubber, up, normalForce, dt);
+        passed &= expect(Math.abs(rubber.getForceAccumulator().getX() + rubberEarth.kineticFriction * normalForce) < 1e-3f, "Contact friction uses the material table (RUBBER/EARTH)");
+        passed &= expect(rubber.getForceAccumulator().getX() < block.getForceAccumulator().getX(), "Contact friction: rubber brakes more than steel");
 
-        float dt = PhysicsConstants.FIXED_TIMESTEP;
-        Particle fall = new Particle(new Point3D(), new Vector3D(), new Vector3D(), 1.0f, 1.0f, false);
-        ForceRegistry dragRegistry = new ForceRegistry();
-        dragRegistry.add(fall, new TestConstantForce(new Vector3D(10.0f, 0.0f, 0.0f)));
-        dragRegistry.add(fall, new DragForceGenerator(1.0f, 1.0f));
-        for (int i = 0; i < 60 * 15; i++) {
-            dragRegistry.updateForces(dt);
-            fall.integrate(dt, mode);
-            fall.clearAccumulator(); // Updated to standard naming
-        }
-        float terminal = (-1.0f + (float)Math.sqrt(41.0f)) / 2.0f; 
-        passed &= expect(Math.abs(fall.getVelocity().getX() - terminal) < 0.01f * terminal, "Drag terminal velocity (k1 + k2)" + tag);
+        // 4. SYMÉTRIE : l'ordre (p1, p2) ne change pas le résultat
+        gen = new ContactFrictionGenerator();
+        ground = makeGround(Material.EARTH);
+        block = makeBlock(m, new Vector3D(5.0f, 0.0f, 0.0f), Material.STEEL);
+        gen.applyContact(block, ground, up.negate(), normalForce, dt);
+        passed &= expect(Math.abs(block.getForceAccumulator().getX() + mu_k * normalForce) < 1e-3f, "Contact friction is symmetric in (p1, p2)");
+
+        // 5. PAS DE FORCE NORMALE : aucune friction
+        gen = new ContactFrictionGenerator();
+        ground = makeGround(Material.EARTH);
+        block = makeBlock(m, new Vector3D(5.0f, 0.0f, 0.0f), Material.STEEL);
+        gen.applyContact(ground, block, up, 0.0f, dt);
+        passed &= expect(block.getForceAccumulator().length() == 0.0f, "Contact friction: none without normal force");
+
+        // 6. DÉSACTIVÉ (touche [C])
+        gen = new ContactFrictionGenerator();
+        gen.setEnabled(false);
+        ground = makeGround(Material.EARTH);
+        block = makeBlock(m, new Vector3D(5.0f, 0.0f, 0.0f), Material.STEEL);
+        gen.applyContact(ground, block, up, normalForce, dt);
+        passed &= expect(block.getForceAccumulator().length() == 0.0f, "Contact friction: disabled adds nothing");
+
+        // 7. DEUX MASSES MOBILES : forces égales et opposées, et un contact assez pressé les fait
+        //    glisser ensemble (statique) avec conservation de la quantité de mouvement tangentielle
+        gen = new ContactFrictionGenerator();
+        Particle a = makeBlock(1.0f, new Vector3D(3.0f, 0.0f, 0.0f), Material.STEEL);
+        Particle b = makeBlock(3.0f, new Vector3D(0.0f, 0.0f, 0.0f), Material.STEEL);
+        float momentumBefore = a.getMass() * a.getVelocity().getX() + b.getMass() * b.getVelocity().getX();
+        gen.applyContact(a, b, up, 1000.0f, dt);
+        passed &= expect(a.getForceAccumulator().add(b.getForceAccumulator()).length() < 1e-3f, "Contact friction: equal and opposite forces on both particles");
+        a.integrate(dt, IntegrationMode.Euler);
+        b.integrate(dt, IntegrationMode.Euler);
+        float momentumAfter = a.getMass() * a.getVelocity().getX() + b.getMass() * b.getVelocity().getX();
+        passed &= expect(Math.abs(momentumAfter - momentumBefore) < 1e-3f, "Contact friction conserves tangential momentum");
+        passed &= expect(Math.abs(a.getVelocity().getX() - b.getVelocity().getX()) < 1e-3f, "Contact friction: two particles stick together");
+
+        // 8. JAMAIS D'INVERSION : même avec une force normale gigantesque (mu*N >> F_stop)
+        gen = new ContactFrictionGenerator();
+        ground = makeGround(Material.EARTH);
+        block = makeBlock(m, new Vector3D(0.05f, 0.0f, 0.0f), Material.RUBBER);
+        gen.applyContact(ground, block, up, 1.0e6f, dt);
+        block.integrate(dt, IntegrationMode.Euler);
+        passed &= expect(Math.abs(block.getVelocity().getX()) < 1e-4f, "Contact friction never reverses the sliding");
 
         return passed;
     }
 
-    void testFriction() {
+    boolean testDragGenerator() {
         boolean passed = true;
         float dt = PhysicsConstants.FIXED_TIMESTEP;
 
+        // Force instantanée : f = -(k1 |v| + k2 |v|^2) v^ = -(5 + 10) = -15 selon X
         Particle p = new Particle(new Point3D(), new Vector3D(10.0f, 0.0f, 0.0f), new Vector3D(), 1.0f, 1.0f, false);
         new DragForceGenerator(0.5f, 0.1f).updateForce(p, dt);
-        passed &= expect(p.getForceAccumulator().equals(new Vector3D(-15.0f, 0.0f, 0.0f)), "Drag force = -(k1|v| + k2|v|^2) v^"); // Updated
+        passed &= expect(p.getForceAccumulator().equals(new Vector3D(-15.0f, 0.0f, 0.0f)), "Drag force = -(k1|v| + k2|v|^2) v^");
 
         Particle still = new Particle();
         new DragForceGenerator(1.0f, 1.0f).updateForce(still, dt);
-        passed &= expect(still.getForceAccumulator().length() == 0.0f, "Drag is zero at rest"); // Updated
+        passed &= expect(still.getForceAccumulator().length() == 0.0f, "Drag is zero at rest");
 
+        // Garde-fou : une traînée gigantesque arrête la particule, elle ne la fait pas reculer
         Particle fast = new Particle(new Point3D(), new Vector3D(10.0f, 0.0f, 0.0f), new Vector3D(), 2.0f, 1.0f, false);
         new DragForceGenerator(1.0e6f, 0.0f).updateForce(fast, dt);
-        float maxStop = 2.0f * 10.0f / dt; 
-        passed &= expect(Math.abs(fast.getForceAccumulator().length() - maxStop) < 1e-2f * maxStop, "Drag is clamped to m|v|/dt"); // Updated
+        float maxStop = 2.0f * 10.0f / dt; // m |v| / dt
+        passed &= expect(Math.abs(fast.getForceAccumulator().length() - maxStop) < 1e-2f * maxStop, "Drag is clamped to m|v|/dt");
         fast.integrate(dt, IntegrationMode.Euler);
         passed &= expect(fast.getVelocity().getX() > -1e-3f, "Drag never reverses velocity");
 
+        // Masse infinie : ignorée
         Particle wall = new Particle(new Point3D(), new Vector3D(10.0f, 0.0f, 0.0f), new Vector3D(), 0.0f, 1.0f, false);
         new DragForceGenerator(1.0f, 1.0f).updateForce(wall, dt);
-        passed &= expect(wall.getForceAccumulator().length() == 0.0f, "Drag ignores infinite-mass particles"); // Updated
+        passed &= expect(wall.getForceAccumulator().length() == 0.0f, "Drag ignores infinite-mass particles");
 
+        // Désactivé (touche [C])
         Particle off = new Particle(new Point3D(), new Vector3D(10.0f, 0.0f, 0.0f), new Vector3D(), 1.0f, 1.0f, false);
         DragForceGenerator disabled = new DragForceGenerator(1.0f, 1.0f);
         disabled.setEnabled(false);
         disabled.updateForce(off, dt);
-        passed &= expect(off.getForceAccumulator().length() == 0.0f, "Disabled generator adds no force"); // Updated
+        passed &= expect(off.getForceAccumulator().length() == 0.0f, "Drag: disabled adds no force");
 
-        Particle air = new Particle(new Point3D(0.0f, 5.0f, 0.0f), new Vector3D(5.0f, 0.0f, 0.0f), new Vector3D(), 1.0f, 1.0f, false);
-        air.addForce(new Vector3D(0.0f, -PhysicsConstants.GRAVITY, 0.0f));
-        CoulombFrictionGenerator airCoulomb = new CoulombFrictionGenerator(
-            new PlaneSurface(new Point3D(), new Vector3D(0.0f, 1.0f, 0.0f)), 0.6f, 0.4f);
-        airCoulomb.updateForce(air, dt);
-        passed &= expect(airCoulomb.getState() == ContactState.Airborne, "Coulomb: Airborne when not touching");
-        passed &= expect(Math.abs(air.getForceAccumulator().getX()) < 1e-6f, "Coulomb: no friction when Airborne"); // Updated
-
-        passed &= expect(new CoulombFrictionGenerator(null, 0.3f, 0.9f).getKineticCoeff() <= 0.3f, "Coulomb: mu_k clamped to mu_s");
-
+        // Vitesse terminale avec les 3 intégrateurs : F = 10 N, k1 = 1, k2 = 1 -> v + v^2 = 10
+        float terminal = (-1.0f + (float)Math.sqrt(41.0f)) / 2.0f;
         for (IntegrationMode mode : IntegrationMode.values()) {
-            passed &= testFrictionAllModes(mode);
+            Particle fall = new Particle(new Point3D(), new Vector3D(), new Vector3D(), 1.0f, 1.0f, false);
+            ForceRegistry registry = new ForceRegistry();
+            registry.add(fall, new ConstantForceGenerator(new Vector3D(10.0f, 0.0f, 0.0f)));
+            registry.add(fall, new DragForceGenerator(1.0f, 1.0f));
+            for (int i = 0; i < 60 * 15; i++) {
+                registry.updateForces(dt);
+                fall.integrate(dt, mode);
+            }
+            passed &= expect(Math.abs(fall.getVelocity().getX() - terminal) < 0.01f * terminal, "Drag terminal velocity (k1 + k2) [" + mode.name() + "]");
         }
-
-        if (passed) println("Friction: All tests passed!");
+        return passed;
     }
 
+    // Résultat d'une simulation de glissement
+    class SlideResult {
+        float z;            // déplacement selon Z pendant la simulation (après la mise au repos)
+        float vz;           // vitesse finale selon Z
+        float minVz;        // vitesse minimale rencontrée (détecte un recul)
+        ContactState state; // état de contact final de la balle
+    }
+
+    // Balle posée sur la vraie Terre, avec le VRAI résolveur de collisions (resolveCollisionsAndConstraints),
+    // la vraie gravité (GravityGenerator) et, si demandé, une poussée (ConstantForceGenerator).
+    // Même boucle que le jeu : générateurs -> intégration -> collisions.
+    // Si la balle part du repos (v0 = 0), on la laisse d'abord se poser 0.5 s : dans le jeu, une force
+    // latérale s'applique à un objet déjà en contact, pas à un objet posé "pile" sur la surface.
+    SlideResult simulateSlide(IntegrationMode mode, Material material, float v0, float push, float seconds) {
+        float dt = PhysicsConstants.FIXED_TIMESTEP;
+
+        // On met la scène du jeu de côté le temps du test
+        ArrayList<Particle> savedParticles = new ArrayList<Particle>(particles);
+        ArrayList<Cable> savedCables = new ArrayList<Cable>(cables);
+        particles.clear();
+        cables.clear();
+
+        Earth ground = new Earth(new Point3D(0.0f, -6371000.0f, 0.0f));
+        SpaceSphere ball = new SpaceSphere(new Point3D(0.0f, 1.0f, 0.0f), new Vector3D(0.0f, 0.0f, v0));
+        ball.setMaterial(material);
+        particles.add(ground);
+        particles.add(ball);
+
+        ForceRegistry registry = new ForceRegistry();
+        registry.add(ball, new GravityGenerator(new Vector3D(0.0f, -PhysicsConstants.GRAVITY, 0.0f)));
+        ConstantForceGenerator pusher = new ConstantForceGenerator(new Vector3D(0.0f, 0.0f, push));
+        pusher.setActive(false);
+        registry.add(ball, pusher);
+
+        if (v0 == 0.0f) {
+            for (int i = 0; i < 30; i++) {
+                registry.updateForces(dt);
+                ball.integrate(dt, mode);
+                resolveCollisionsAndConstraints(dt);
+            }
+        }
+        float startZ = ball.getPosition().getZ();
+        pusher.setActive(push != 0.0f);
+
+        SlideResult r = new SlideResult();
+        r.minVz = v0;
+        int steps = Math.round(seconds / dt);
+        for (int i = 0; i < steps; i++) {
+            registry.updateForces(dt);
+            ball.integrate(dt, mode);
+            resolveCollisionsAndConstraints(dt);
+            r.minVz = Math.min(r.minVz, ball.getVelocity().getZ());
+        }
+        r.z = ball.getPosition().getZ() - startZ;
+        r.vz = ball.getVelocity().getZ();
+        r.state = contactFriction.getState(ball);
+
+        // On remet la scène du jeu
+        particles.clear();
+        cables.clear();
+        particles.addAll(savedParticles);
+        cables.addAll(savedCables);
+        return r;
+    }
+
+    boolean testFrictionWithCollisions(IntegrationMode mode) {
+        boolean passed = true;
+        String tag = " [" + mode.name() + "]";
+        float g = PhysicsConstants.GRAVITY;
+        float m = new SpaceSphere(new Point3D(), new Vector3D()).getMass();
+        boolean wasEnabled = contactFriction.isEnabled();
+        contactFriction.setEnabled(true);
+
+        MaterialInteraction steelEarth = PhysicsMaterials.get(Material.STEEL, Material.EARTH);
+        float mu_s = steelEarth.staticFriction;
+        float mu_k = steelEarth.kineticFriction;
+
+        // 1. FREINAGE : v0 = 5 m/s, a = -mu_k*g, distance = v0^2 / (2 mu_k g)
+        float v0 = 5.0f;
+        float expectedDistance = (v0 * v0) / (2.0f * mu_k * g);
+        SlideResult br = simulateSlide(mode, Material.STEEL, v0, 0.0f, 4.0f);
+        passed &= expect(Math.abs(br.z - expectedDistance) < 0.05f * expectedDistance, "Collisions + friction: braking distance v0^2/(2 mu_k g)" + tag);
+        passed &= expect(Math.abs(br.vz) < 1e-3f, "Collisions + friction: ball fully stops" + tag);
+        passed &= expect(br.minVz >= -1e-4f, "Collisions + friction: velocity never reverses" + tag);
+
+        // 2. LA TABLE : un caoutchouc (mu_k plus élevé) s'arrête plus court qu'un acier
+        SlideResult rubber = simulateSlide(mode, Material.RUBBER, v0, 0.0f, 4.0f);
+        passed &= expect(rubber.z < br.z, "Collisions + friction: rubber stops shorter than steel" + tag);
+
+        // 3. SANS FRICTION : la balle ne ralentit pas (le générateur est bien ce qui freine)
+        contactFriction.setEnabled(false);
+        SlideResult free = simulateSlide(mode, Material.STEEL, v0, 0.0f, 2.0f);
+        passed &= expect(free.vz > 0.95f * v0, "Collisions without friction: ball keeps its speed" + tag);
+        contactFriction.setEnabled(true);
+
+        // 4. POUSSÉE SOUS LE SEUIL STATIQUE (90 % de mu_s*m*g) : la balle ne doit pas partir.
+        //    Elle avance très lentement (la friction ne voit pas la poussée du pas suivant, voir
+        //    ContactFrictionGenerator), mais sa vitesse reste faible et son déplacement limité.
+        float holdPush = 0.9f * mu_s * m * g;
+        SlideResult hold = simulateSlide(mode, Material.STEEL, 0.0f, holdPush, 2.0f);
+        passed &= expect(Math.abs(hold.vz) < 0.15f && Math.abs(hold.z) < 0.5f, "Collisions + friction: static friction holds at 90% of mu_s*m*g" + tag);
+
+        // 5. POUSSÉE AU-DESSUS : a = (F - mu_k*m*g)/m
+        float strongPush = 2.0f * mu_s * m * g;
+        float aExpected = (strongPush - mu_k * m * g) / m;
+        SlideResult go = simulateSlide(mode, Material.STEEL, 0.0f, strongPush, 1.0f);
+        passed &= expect(Math.abs(go.vz - aExpected) < 0.03f * aExpected, "Collisions + friction: acceleration (F - mu_k m g)/m" + tag);
+        passed &= expect(go.state == ContactState.Sliding, "Collisions + friction: state is Sliding" + tag);
+
+        contactFriction.setEnabled(wasEnabled);
+        return passed;
+    }
 
     // --- Force Accumulator and Generator Tests ---
     void testForceAccumulator() {
@@ -638,19 +783,5 @@ class Tests {
             println("  [FAILED] " + name);
         }
         return condition;
-    }
-}
-
-// Generateur de test : applique une force constante
-class TestConstantForce implements ForceGenerator {
-    private Vector3D m_force;
-
-    public TestConstantForce(Vector3D force) {
-        m_force = force;
-    }
-
-    @Override
-    public void updateForce(Particle p, float dt) {
-        p.addForce(m_force);
     }
 }

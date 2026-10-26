@@ -44,10 +44,14 @@ final float SPRING_REST = 2.0f;
 ForceRegistry forceRegistry = new ForceRegistry(); 
 GravityGenerator gravityGenerator = new GravityGenerator(new Vector3D(0.0f, -PhysicsConstants.GRAVITY, 0.0f));
 
-// --- Friction State ---
-ArrayList<FrictionGenerator> frictionGenerators = new ArrayList<FrictionGenerator>();
-CoulombFrictionGenerator playerGroundFriction;
+// --- Friction ---
+// Contact : UN seul générateur, appelé par le système de collisions (coefficients : Materials.pde)
+ContactFrictionGenerator contactFriction = new ContactFrictionGenerator();
+// Fluide : traînée de l'air (k1 = 0.1, k2 = 0.02), partagée par toutes les particules
+DragForceGenerator airDrag = new DragForceGenerator(0.1f, 0.02f);
 boolean frictionEnabled = true;
+boolean frictionKeyDown = false;
+boolean materialKeyDown = false;
 
 // --- Drawable Forces (Springs) ---
 class DrawableForceBinding {
@@ -185,24 +189,27 @@ void resetGame() {
     setupFriction();
 }
 
+// Friction de contact : aucun setup, elle s'applique à toute paire de particules en collision
+// (voir Collisions.pde). Il ne reste qu'à brancher la traînée de l'air sur les particules mobiles.
 void setupFriction() {
-    frictionGenerators.clear();
-    DragForceGenerator airDrag = new DragForceGenerator(0.1f, 0.02f);
-    frictionGenerators.add(airDrag);
-
     for (Particle p : particles) {
-        if (p.getInverseMass() <= 0.0f) continue; 
-
-        forceRegistry.add(p, airDrag);
-
-        CoulombFrictionGenerator groundFriction =
-            new CoulombFrictionGenerator(new SphericalSurface(earth), 0.6f, 0.4f);
-        frictionGenerators.add(groundFriction);
-        
-        forceRegistry.add(p, groundFriction); 
-
-        if (p == player) playerGroundFriction = groundFriction;
+        if (p.getInverseMass() > 0.0f) {
+            forceRegistry.add(p, airDrag);
+        }
     }
+}
+
+void toggleFriction() {
+    frictionEnabled = !frictionEnabled;
+    contactFriction.setEnabled(frictionEnabled);
+    airDrag.setEnabled(frictionEnabled);
+}
+
+// Démo : change le matériau du joueur pour comparer les coefficients de la table.
+void cyclePlayerMaterial() {
+    if (player == null) return;
+    Material[] all = Material.values();
+    player.setMaterial(all[(player.getMaterial().ordinal() + 1) % all.length]);
 }
 
 // ==========================================
@@ -488,6 +495,14 @@ public void keyPressed() {
             explosionKeyDown = true;
             explosionRequested = true;
         }
+        if (k == 'c' && !frictionKeyDown) {
+            frictionKeyDown = true;
+            toggleFriction();
+        }
+        if (k == 'm' && !materialKeyDown) {
+            materialKeyDown = true;
+            cyclePlayerMaterial();
+        }
     }
 }
 
@@ -500,6 +515,8 @@ public void keyReleased() {
     if (k == 'd') pushRight = false;
     if (k == 'f') debugKeyDown = false;
     if (k == 'e') explosionKeyDown = false;
+    if (k == 'c') frictionKeyDown = false;
+    if (k == 'm') materialKeyDown = false;
 }
 
 void updatePlayerControls() {
@@ -609,6 +626,8 @@ void renderSidePanel() {
         "Particle instances: " + formatWithCommas(totalCount),
         "Blob count: " + formatWithCommas(blobParticles.size()),
         "Force registrations: " + forceRegistry.size(),
+        "Player contact: " + (player != null ? contactFriction.getState(player).name() : "-"),
+        "Player material: " + (player != null ? player.getMaterial().name() : "-"),
     };
 
     String[] controlLines = {
@@ -617,6 +636,8 @@ void renderSidePanel() {
         "Push [WASD]: " + ((pushGenerator != null && pushGenerator.isActive()) ? "ON" : "OFF"),
         "Debug arrow [F]",
         "Explosion [E]",
+        "Friction [C]: " + (frictionEnabled ? "ON" : "OFF"),
+        "Player material [M]",
         "End screen [G]"
     };
 
