@@ -28,10 +28,81 @@ class Cable {
     }
 }
 
+// Analytical slope collision resolver
+void resolveSlopeCollisions(AnalyticalSlope slope, float dt) {
+    float halfWidth = slope.width / 2.0f;
+    float rad = radians(slope.angleDeg);
+    float cosA = cos(rad);
+    float sinA = sin(rad);
+
+    for (Particle p : particles) {
+        if (p.getInverseMass() <= 0.0f) continue; // Skip static objects
+
+        Point3D pPos = p.getPosition();
+        float r = p.getRadius();
+
+        // Local coordinate transformation
+        float localX = (pPos.getX() - slope.startPos.getX()) * cosA + (pPos.getY() - slope.startPos.getY()) * sinA;
+        float localY = -(pPos.getX() - slope.startPos.getX()) * sinA + (pPos.getY() - slope.startPos.getY()) * cosA;
+        float localZ = pPos.getZ() - slope.startPos.getZ();
+
+        // Check if within bounds of the slope
+        if (localX >= 0.0f && localX <= slope.length && localZ >= -halfWidth && localZ <= halfWidth) {
+            float penetration = r - localY;
+
+            if (penetration > 0.0f) {
+                Vector3D n = slope.normal;
+                p.moveSilently(n.mult(penetration));
+
+                Vector3D v = p.getVelocity();
+                float vDotN = v.dot(n);
+
+                if (vDotN < 0.0f) {
+                    MaterialInteraction interaction = PhysicsMaterials.get(p.getMaterial(), slope.material);
+                    float e = interaction.restitution;
+
+                    float gravityVelocity = PhysicsConstants.GRAVITY * dt;
+                    if (Math.abs(vDotN) <= gravityVelocity * 1.01f) {
+                        e = 0.0f; 
+                    }
+
+                    float k = (-(e + 1.0f) * vDotN) / p.getInverseMass();
+                    Vector3D collisionForce = n.mult(k).div(dt);
+                    p.addForce(collisionForce);
+
+                    float normalForce = k / dt;
+                    applySlopeFriction(p, n, normalForce, dt, slope.material);
+                }
+            }
+        }
+    }
+}
+
+void applySlopeFriction(Particle p, Vector3D n, float normalForce, float dt, Material slopeMat) {
+    if (normalForce <= 0.0f) return;
+
+    MaterialInteraction material = PhysicsMaterials.get(p.getMaterial(), slopeMat);
+    float staticCoeff = material.staticFriction;
+    float kineticCoeff = Math.min(material.kineticFriction, staticCoeff);
+
+    Vector3D v = p.getVelocity();
+    Vector3D vTangent = v.sub(n.mult(v.dot(n)));
+    float slideSpeed = vTangent.length();
+
+    if (slideSpeed < 1e-6f) return;
+
+    Vector3D t = vTangent.mult(1.0f / slideSpeed);
+    float stopSpeedForce = slideSpeed / (dt * p.getInverseMass());
+    float maxStaticForce = staticCoeff * normalForce;
+    
+    float frictionForce = (stopSpeedForce <= maxStaticForce) ? stopSpeedForce : kineticCoeff * normalForce;
+    p.addForce(t.mult(-frictionForce));
+}
+
 void resolveCollisionsAndConstraints(float dt) {
     contactFriction.beginStep();
 
-    // 1. O(N^2) COLLISION LOOP
+    // 1. O(N^2) PARTICLE COLLISION LOOP
     for (int i = 0; i < particles.size(); i++) {
         for (int j = i + 1; j < particles.size(); j++) {
             Particle p1 = particles.get(i);
@@ -48,7 +119,6 @@ void resolveCollisionsAndConstraints(float dt) {
             double dist = Math.sqrt(distSq);
             double sumRadii = (double)r1 + (double)r2;
 
-            // Detect collision (interpenetration)
             if (dist < sumRadii && dist > 0.00001) {
                 Vector3D n = new Vector3D((float)(dx / dist), (float)(dy / dist), (float)(dz / dist));
                 float d = (float)(sumRadii - dist); 
@@ -57,7 +127,6 @@ void resolveCollisionsAndConstraints(float dt) {
                 float invM2 = p2.getInverseMass();
                 float totalInvMass = invM1 + invM2;
 
-                // A. SEPARATE OBJECTS (Move Silently prevents Verlet jitter)
                 if (totalInvMass > 0.0f) {
                     float shiftP1 = d * (invM1 / totalInvMass);
                     float shiftP2 = d * (invM2 / totalInvMass);
@@ -65,27 +134,19 @@ void resolveCollisionsAndConstraints(float dt) {
                     p2.moveSilently(n.mult(shiftP2));
                 }
 
-                // B. CALCULATE RELATIVE VELOCITY
                 Vector3D vRel = p1.getVelocity().sub(p2.getVelocity());
                 float vRelDotN = vRel.dot(n);
                 
                 if (vRelDotN < 0) continue; 
                 
                 MaterialInteraction interaction = PhysicsMaterials.get(p1.getMaterial(), p2.getMaterial());
-                
                 float e = interaction.restitution;
                 
-                // C. CONTACT AU REPOS
                 float gravityVelocity = PhysicsConstants.GRAVITY * dt;
-                // NOTE (friction) : tolérance de 1 %. Au repos, vRelDotN vaut g*dt à l'arrondi flottant près :
-                // sans tolérance, le test échoue un pas sur deux, la balle reçoit un petit rebond (e > 0) et
-                // la force normale alterne entre un pas fort et un pas faible. La friction statique
-                // (mu_s * N) est alors trop faible un pas sur deux et la balle s'échappe.
                 if (Math.abs(vRelDotN) <= gravityVelocity * 1.01f) {
-                    e = 0.0f; // Force perfectly inelastic collision (no bounce)
+                    e = 0.0f; 
                 }
                 
-                // D. APPLY FORCES TO ACCUMULATOR
                 float normalForce = 0.0f;
                 if (totalInvMass > 0.0f) {
                     float k = ((e + 1.0f) * vRelDotN) / totalInvMass;
@@ -95,14 +156,17 @@ void resolveCollisionsAndConstraints(float dt) {
                     p2.addForce(collisionForce);
                 }
                 
-                // E. FRICTION (Coulomb) : réutilise la normale et la force normale déjà calculées.
-                // Les coefficients sont lus dans PhysicsMaterials par le générateur.
                 contactFriction.applyContact(p1, p2, n, normalForce, dt);
             }
         }
     }
 
-    // 2. CABLE CONSTRAINTS
+    // 2. ANALYTICAL SLOPE COLLISIONS
+    for (AnalyticalSlope slope : analyticalSlopes) {
+        resolveSlopeCollisions(slope, dt);
+    }
+
+    // 3. CABLE CONSTRAINTS
     for (Cable cable : cables) {
         Particle p1 = cable.p1;
         Particle p2 = cable.p2;

@@ -10,11 +10,12 @@ enum GameState {
 
 GameState currentState = GameState.Menu;
 Vector3D currentCamDir = new Vector3D(0.0f, 0.0f, 1.0f);
-Point3D smoothedCamPos = new Point3D(0.0f, 0.0f, 0.0f); // Smooth camera damping
+Point3D smoothedCamPos = new Point3D(0.0f, 0.0f, 0.0f); 
 
 // --- Gameplay State ---
 ArrayList<Particle> particles = new ArrayList<Particle>();
 ArrayList<Cable> cables = new ArrayList<Cable>();
+ArrayList<AnalyticalSlope> analyticalSlopes = new ArrayList<AnalyticalSlope>();
 
 // --- Blob Mechanics State ---
 ArrayList<Particle> blobParticles = new ArrayList<Particle>();
@@ -35,25 +36,20 @@ ArrayList<BlobConnection> activeConnections = new ArrayList<BlobConnection>();
 // --- Tuning Constants for Blob ---
 final float ATTACH_DISTANCE = 4.0f;
 final float DETACH_DISTANCE = 5.5f; 
-final float SPRING_K_MAIN = 25.0f;      // Stronger springs for attachments directly to the main blob/player
-final float SPRING_K_SECONDARY = 10.0f; // Weaker springs for secondary internal lattice links
+final float SPRING_K_MAIN = 25.0f;      
+final float SPRING_K_SECONDARY = 10.0f; 
 final float SPRING_REST = 2.0f;
-
 
 // --- System Integrations ---
 ForceRegistry forceRegistry = new ForceRegistry(); 
 GravityGenerator gravityGenerator = new GravityGenerator(new Vector3D(0.0f, -PhysicsConstants.GRAVITY, 0.0f));
 
-// --- Friction ---
-// Contact : UN seul générateur, appelé par le système de collisions (coefficients : Materials.pde)
 ContactFrictionGenerator contactFriction = new ContactFrictionGenerator();
-// Fluide : traînée de l'air (k1 = 0.1, k2 = 0.02), partagée par toutes les particules
 DragForceGenerator airDrag = new DragForceGenerator(0.1f, 0.02f);
 boolean frictionEnabled = true;
 boolean frictionKeyDown = false;
 boolean materialKeyDown = false;
 
-// --- Drawable Forces (Springs) ---
 class DrawableForceBinding {
     Particle particle;
     DrawableForceGenerator fg;
@@ -115,10 +111,6 @@ public void draw() {
     }
 }
 
-// ==========================================
-// Lifecycle & State Transitions
-// ==========================================
-
 SpaceSphere player;
 Earth earth;
 
@@ -127,8 +119,8 @@ void resetGame() {
     cables.clear();
     forceRegistry.clear();
     drawableForces.clear();
+    analyticalSlopes.clear(); 
     
-    // Reset Blob State
     blobParticles.clear();
     loneParticles.clear();
     activeConnections.clear();
@@ -137,17 +129,35 @@ void resetGame() {
     currentState = GameState.Playing;
     
     earth = new Earth(new Point3D(0.0f, -6371000.0f, 0.0f)); 
-    player = new SpaceSphere(new Point3D(0.0f, 2.0f, 0.0f), new Vector3D(0.0f, 0.0f, 0.0f));
+    
+    // --- SETUP ANALYTICAL SLOPES ---
+    AnalyticalSlope slope1 = new AnalyticalSlope(new Point3D(-15.0f, 1.0f, 0.0f), 25.0f, 10.0f, 15.0f, Material.WOOD);
+    analyticalSlopes.add(slope1);
+    
+    player = new SpaceSphere(new Point3D(-3.0f, 6.5f, 0.0f), new Vector3D(0.0f, 0.0f, 0.0f));
     player.setMaterial(Material.RUBBER);
     
     particles.add(earth);
     particles.add(player);
-    blobParticles.add(player); 
+    blobParticles.add(player);
 
-    // SCATTER MECHANIC: Increased density and variety (120 pieces, mixed materials and sizes)
+    AnalyticalSlope slope2 = new AnalyticalSlope(new Point3D(-15.0f, 1.0f, -15.0f), 25.0f, 10.0f, 10.0f, Material.WOOD);
+    analyticalSlopes.add(slope2);
+    SmallSphere staticBall = new SmallSphere(new Point3D(-3.0f, 4.5f, -15.0f), new Vector3D(0.0f, 0.0f, 0.0f));
+    staticBall.setMaterial(Material.WOOD);
+    particles.add(staticBall);
+    loneParticles.add(staticBall);
+
+    AnalyticalSlope slope3 = new AnalyticalSlope(new Point3D(-15.0f, 1.0f, 15.0f), 25.0f, 10.0f, 35.0f, Material.WOOD);
+    analyticalSlopes.add(slope3);
+    SmallSphere rollingBall = new SmallSphere(new Point3D(-3.0f, 14.5f, 15.0f), new Vector3D(0.0f, 0.0f, 0.0f));
+    rollingBall.setMaterial(Material.STEEL);
+    particles.add(rollingBall);
+    loneParticles.add(rollingBall);
+
     for (int i = 0; i < 120; i++) {
         float angle = random(TWO_PI);
-        float dist = random(5.0f, 200.0f);
+        float dist = random(25.0f, 200.0f);
         float px = cos(angle) * dist;
         float pz = sin(angle) * dist;
         
@@ -170,14 +180,12 @@ void resetGame() {
         loneParticles.add(scatteredPart);
     }
 
-    // Register Base Gravity
     for (Particle p : particles) {
         if (p.getAffectedByGravity()) {
             forceRegistry.add(p, gravityGenerator);
         }
     }
     
-    // Setup Inputs
     thrustGenerator = new ConstantForceGenerator(new Vector3D(0.0f, THRUST_WEIGHT_RATIO * player.getMass() * PhysicsConstants.GRAVITY, 0.0f));
     thrustGenerator.setActive(false);
     pushGenerator = new ConstantForceGenerator(new Vector3D());
@@ -185,12 +193,9 @@ void resetGame() {
     forceRegistry.add(player, thrustGenerator);
     forceRegistry.add(player, pushGenerator);
 
-    // Setup Friction last
     setupFriction();
 }
 
-// Friction de contact : aucun setup, elle s'applique à toute paire de particules en collision
-// (voir Collisions.pde). Il ne reste qu'à brancher la traînée de l'air sur les particules mobiles.
 void setupFriction() {
     for (Particle p : particles) {
         if (p.getInverseMass() > 0.0f) {
@@ -205,16 +210,11 @@ void toggleFriction() {
     airDrag.setEnabled(frictionEnabled);
 }
 
-// Démo : change le matériau du joueur pour comparer les coefficients de la table.
 void cyclePlayerMaterial() {
     if (player == null) return;
     Material[] all = Material.values();
     player.setMaterial(all[(player.getMaterial().ordinal() + 1) % all.length]);
 }
-
-// ==========================================
-// Blob Gameplay Logic (Player Bypass for Max Attachments)
-// ==========================================
 
 boolean areConnected(Particle p1, Particle p2) {
     if (p1 == p2) return true;
@@ -237,7 +237,6 @@ int getConnectionCount(Particle p) {
 }
 
 void updateBlobLogic() {
-    // 1. DETACHMENT: Check all active connections for excessive stretch
     for (int i = activeConnections.size() - 1; i >= 0; i--) {
         BlobConnection conn = activeConnections.get(i);
         if (conn.link.length() > DETACH_DISTANCE) {
@@ -261,17 +260,13 @@ void updateBlobLogic() {
         }
     }
 
-    // 2. ATTACHMENT & MULTIPLE ATTACHMENTS
     boolean attachmentFound = true;
     while (attachmentFound) {
         attachmentFound = false;
         
-        // Check lone particles first so disconnected clusters can reattach
         for (int i = loneParticles.size() - 1; i >= 0; i--) {
             Particle lone = loneParticles.get(i);
             
-            // RULE: Always check and allow connection to the player on contact, 
-            // even if the particle already has 3 attachments elsewhere.
             float distToPlayer = (float) lone.getPosition().distanceTo(player.getPosition());
             if (distToPlayer < ATTACH_DISTANCE && !areConnected(lone, player)) {
                 ElasticLink newLink = new ElasticLink(player, lone, SPRING_K_MAIN, SPRING_REST, DETACH_DISTANCE);
@@ -285,10 +280,8 @@ void updateBlobLogic() {
                 break;
             }
             
-            // Non-player particles are capped at 3 connections for other regular nodes
             if (getConnectionCount(lone) >= 3) continue; 
             
-            // Otherwise, check other blob particles (respecting their cap of 3)
             Particle nearestBlobNode = null;
             float minDst = Float.MAX_VALUE;
             
@@ -319,7 +312,6 @@ void updateBlobLogic() {
         
         if (attachmentFound) continue;
 
-        // Secondary internal attachments between existing blob particles (lattice building)
         for (int i = 0; i < blobParticles.size(); i++) {
             Particle p1 = blobParticles.get(i);
             if (p1 != player && getConnectionCount(p1) >= 3) continue;
@@ -345,10 +337,8 @@ void updateBlobLogic() {
     }
 }
 
-
-// ==========================================
-// Render Functions
-// ==========================================
+// Camera smoothing state variables
+Point3D smoothedCamTarget = null;
 
 void drawGameplay() {
     float frameTime = min(customDeltaTime, PhysicsConstants.MAX_FRAME_TIME);
@@ -370,6 +360,7 @@ void drawGameplay() {
     }
 
     arena.setupLighting(this);
+    hint(ENABLE_DEPTH_TEST); // Ensure 3D depth calculations are active for the world
     
     if (player != null) {
         Point3D pos = player.getPosition();
@@ -377,13 +368,15 @@ void drawGameplay() {
         Vector3D flatVel = new Vector3D(vel.getX(), 0.0f, vel.getZ());
         
         if (flatVel.lengthSquared() > 0.01f) {
-            // Lower multiplier (0.03f instead of 0.15f) slows down rotation response so it pans smoothly
-            currentCamDir = currentCamDir.mult(0.97f).add(flatVel.normalized().mult(0.03f)).normalized();
+            currentCamDir = currentCamDir.mult(0.95f).add(flatVel.normalized().mult(0.05f)).normalized();
         }
         
-        // Less nauseating: further back, higher up, and interpolated smoothly
-        float distanceBehind = 30.0f;
-        float heightAbove = 14.0f; 
+        if (totalTime < 2.5f) {
+            currentCamDir = new Vector3D(0.0f, 0.0f, 1.0f);
+        }
+
+        float distanceBehind = 26.0f;
+        float heightAbove = 10.0f; 
         
         Point3D targetCamPos = new Point3D(
             pos.getX() - currentCamDir.getX() * distanceBehind, 
@@ -391,22 +384,30 @@ void drawGameplay() {
             pos.getZ() - currentCamDir.getZ() * distanceBehind
         );
         
-      // Damp camera position changes smoothly
-      if (smoothedCamPos == null) {
-          smoothedCamPos = targetCamPos;
-      } else {
-          smoothedCamPos = new Point3D(
-              smoothedCamPos.getX() + (targetCamPos.getX() - smoothedCamPos.getX()) * 0.1f,
-              smoothedCamPos.getY() + (targetCamPos.getY() - smoothedCamPos.getY()) * 0.1f,
-              smoothedCamPos.getZ() + (targetCamPos.getZ() - smoothedCamPos.getZ()) * 0.1f
-          );
-      }
-      
-      camera(
-          smoothedCamPos.getX(), smoothedCamPos.getY(), smoothedCamPos.getZ(), 
-          pos.getX(), pos.getY(), pos.getZ(),                 
-          0.0f, -1.0f, 0.0f                                   
-      );
+        Point3D targetCamLookAt = new Point3D(pos.getX(), pos.getY() + 1.0f, pos.getZ());
+
+        if (smoothedCamPos == null) {
+            smoothedCamPos = targetCamPos;
+            smoothedCamTarget = targetCamLookAt;
+        } else {
+            float camLerp = 0.08f; 
+            smoothedCamPos = new Point3D(
+                smoothedCamPos.getX() + (targetCamPos.getX() - smoothedCamPos.getX()) * camLerp,
+                smoothedCamPos.getY() + (targetCamPos.getY() - smoothedCamPos.getY()) * camLerp,
+                smoothedCamPos.getZ() + (targetCamPos.getZ() - smoothedCamPos.getZ()) * camLerp
+            );
+            smoothedCamTarget = new Point3D(
+                smoothedCamTarget.getX() + (targetCamLookAt.getX() - smoothedCamTarget.getX()) * 0.15f,
+                smoothedCamTarget.getY() + (targetCamLookAt.getY() - smoothedCamTarget.getY()) * 0.15f,
+                smoothedCamTarget.getZ() + (targetCamLookAt.getZ() - smoothedCamTarget.getZ()) * 0.15f
+            );
+        }
+        
+        camera(
+            smoothedCamPos.getX(), smoothedCamPos.getY(), smoothedCamPos.getZ(), 
+            smoothedCamTarget.getX(), smoothedCamTarget.getY(), smoothedCamTarget.getZ(),                 
+            0.0f, -1.0f, 0.0f                                   
+        );
         
         perspective(PI/3.0f, (float)width/height, 0.1f, 10000.0f);
     }
@@ -414,13 +415,15 @@ void drawGameplay() {
     arena.draw(this); 
     RenderParticles();
     RenderCables();
+    RenderSlopes();
     
     for (DrawableForceBinding df : drawableForces) {
         df.fg.draw(df.particle);
     }
 
     if (showForceDebug) RenderForceDebug();
-    renderHUD();
+    
+    renderHUD(); // Automatically calls reset2DContext() which disables depth test for clean overlay rendering
 }
 
 void updateParticles(float timestep) {
@@ -439,6 +442,12 @@ void RenderCables() {
 void RenderParticles() {
     for (Particle particle : particles) {
         particle.draw();
+    }
+}
+
+void RenderSlopes() {
+    for (AnalyticalSlope slope : analyticalSlopes) {
+        slope.draw(this);
     }
 }
 
@@ -464,10 +473,6 @@ void RenderForceDebug() {
     }
 }
 
-// ==========================================
-// Input Handling & Timing
-// ==========================================
-
 public void mousePressed() { if (currentState != GameState.Playing) return; }
 public void mouseWheel(MouseEvent event) { if (currentState != GameState.Playing) return; }
 public void keyPressed() {
@@ -487,6 +492,12 @@ public void keyPressed() {
         if (k == 's') pushBack = true;
         if (k == 'a') pushLeft = true;
         if (k == 'd') pushRight = true;
+        if (key == ' ') {
+            // Give the player core (and attached blob) a small upward jump impulse
+            if (player != null) {
+                player.applyImpulse(new Vector3D(0.0f, 250.0f, 0.0f));
+            }
+        }
         if (k == 'f' && !debugKeyDown) {
             debugKeyDown = true;
             showForceDebug = !showForceDebug;
@@ -521,7 +532,6 @@ public void keyReleased() {
 
 void updatePlayerControls() {
     if (thrustGenerator == null || pushGenerator == null) return;
-
     thrustGenerator.setActive(thrustHeld);
 
     Vector3D forward = new Vector3D(currentCamDir.getX(), 0.0f, currentCamDir.getZ()).normalized();
@@ -537,7 +547,6 @@ void updatePlayerControls() {
         pushGenerator.setActive(false);
         return;
     }
-    
     pushGenerator.setForce(dir.normalized().mult(PUSH_FORCE));
     pushGenerator.setActive(true);
 }
@@ -557,10 +566,6 @@ void actualiseDeltaTime() {
     }
     customFPS = (smoothedDeltaTime > 0.0f) ? (1.0f / smoothedDeltaTime) : 0.0f;
 }
-
-// ==========================================
-// Rendering HUD and Menus
-// ==========================================
 
 void drawMenuScreen() {
     reset2DContext();
@@ -594,7 +599,12 @@ void drawGameOverScreen() {
     text("Press [SPACE] or [ESC] for Menu", width / 2.0f, height / 2.0f + 90.0f);
 }
 
-void reset2DContext() { camera(); noLights(); noStroke(); }
+void reset2DContext() { 
+    hint(DISABLE_DEPTH_TEST); // Disables depth buffer clipping for 2D UI elements
+    camera(); 
+    noLights(); 
+    noStroke(); 
+}
 String formatWithCommas(int value) { return String.format("%,d", value); }
 void renderHUD() { reset2DContext(); renderScoreHUD(); renderSidePanel(); }
 
@@ -630,10 +640,10 @@ void renderSidePanel() {
         "Player material: " + (player != null ? player.getMaterial().name() : "-"),
     };
 
-    String[] controlLines = {
+String[] controlLines = {
         "Integration [I]: " + currentIntegrationMode.name(),
         "Thrust [T]: " + ((thrustGenerator != null && thrustGenerator.isActive()) ? "ON" : "OFF"),
-        "Push [WASD]: " + ((pushGenerator != null && pushGenerator.isActive()) ? "ON" : "OFF"),
+        "Push [WASD] | Jump [SPACE]",
         "Debug arrow [F]",
         "Explosion [E]",
         "Friction [C]: " + (frictionEnabled ? "ON" : "OFF"),
