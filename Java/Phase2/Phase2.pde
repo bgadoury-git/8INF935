@@ -10,7 +10,13 @@ enum GameState {
 
 GameState currentState = GameState.Menu;
 Vector3D currentCamDir = new Vector3D(0.0f, 0.0f, 1.0f);
-Point3D smoothedCamPos = new Point3D(0.0f, 0.0f, 0.0f); 
+
+Point3D smoothedCamPos = null;
+Point3D smoothedCamTarget = null;
+
+// Camera manual rotation angles
+float camYaw = 0.0f;
+float camPitch = 0.5f; // Starts tilted slightly downward
 
 // --- Gameplay State ---
 ArrayList<Particle> particles = new ArrayList<Particle>();
@@ -33,11 +39,11 @@ class BlobConnection {
 }
 ArrayList<BlobConnection> activeConnections = new ArrayList<BlobConnection>();
 
-// --- Tuning Constants for Blob ---
-final float ATTACH_DISTANCE = 4.0f;
-final float DETACH_DISTANCE = 5.5f; 
-final float SPRING_K_MAIN = 25.0f;      
-final float SPRING_K_SECONDARY = 10.0f; 
+// --- Tuning Constants for Fun & Responsive Blob Play ---
+final float ATTACH_DISTANCE = 5.0f;
+final float DETACH_DISTANCE = 6.8f; 
+final float SPRING_K_MAIN = 35.0f;      
+final float SPRING_K_SECONDARY = 18.0f; 
 final float SPRING_REST = 2.0f;
 
 // --- System Integrations ---
@@ -45,7 +51,7 @@ ForceRegistry forceRegistry = new ForceRegistry();
 GravityGenerator gravityGenerator = new GravityGenerator(new Vector3D(0.0f, -PhysicsConstants.GRAVITY, 0.0f));
 
 ContactFrictionGenerator contactFriction = new ContactFrictionGenerator();
-DragForceGenerator airDrag = new DragForceGenerator(0.1f, 0.02f);
+DragForceGenerator airDrag = new DragForceGenerator(0.08f, 0.015f); 
 boolean frictionEnabled = true;
 boolean frictionKeyDown = false;
 boolean materialKeyDown = false;
@@ -73,18 +79,18 @@ float customFPS = 0;
 float smoothedDeltaTime = 0.0f;
 long lastTimeMs = 0;
 
-final float THRUST_WEIGHT_RATIO = 2.0f;
+final float THRUST_WEIGHT_RATIO = 2.5f;
 boolean thrustHeld = false;
-final float PUSH_FORCE = 200.0f;
+final float PUSH_FORCE = 150.0f; // Lowered base push force for controlled movement
 boolean pushForward = false, pushBack = false, pushLeft = false, pushRight = false;
 ConstantForceGenerator thrustGenerator;
 ConstantForceGenerator pushGenerator;
 
-final float DEBUG_FORCE_SCALE = 0.01f;
+final float DEBUG_FORCE_SCALE = 0.05f; // Increased so debug arrows are clearly visible outside the spheres
 boolean showForceDebug = false;
 boolean debugKeyDown = false;
-final float EXPLOSION_RADIUS = 8.0f;
-final float EXPLOSION_IMPULSE = 400.0f;
+final float EXPLOSION_RADIUS = 10.0f;
+final float EXPLOSION_IMPULSE = 500.0f;
 boolean explosionRequested = false;
 boolean explosionKeyDown = false;
 
@@ -111,7 +117,7 @@ public void draw() {
     }
 }
 
-SpaceSphere player;
+RedSphere player;
 Earth earth;
 
 void resetGame() {
@@ -126,6 +132,11 @@ void resetGame() {
     activeConnections.clear();
     
     totalTime = 0;
+    
+    // Reset camera angles for new game
+    camYaw = 0.0f;
+    camPitch = 0.5f;
+    
     currentState = GameState.Playing;
     
     earth = new Earth(new Point3D(0.0f, -6371000.0f, 0.0f)); 
@@ -134,7 +145,7 @@ void resetGame() {
     AnalyticalSlope slope1 = new AnalyticalSlope(new Point3D(-15.0f, 1.0f, 0.0f), 25.0f, 10.0f, 15.0f, Material.WOOD);
     analyticalSlopes.add(slope1);
     
-    player = new SpaceSphere(new Point3D(-3.0f, 6.5f, 0.0f), new Vector3D(0.0f, 0.0f, 0.0f));
+    player = new RedSphere(new Point3D(-3.0f, 6.5f, 0.0f), new Vector3D(0.0f, 0.0f, 0.0f));
     player.setMaterial(Material.RUBBER);
     
     particles.add(earth);
@@ -143,41 +154,50 @@ void resetGame() {
 
     AnalyticalSlope slope2 = new AnalyticalSlope(new Point3D(-15.0f, 1.0f, -15.0f), 25.0f, 10.0f, 10.0f, Material.WOOD);
     analyticalSlopes.add(slope2);
-    SmallSphere staticBall = new SmallSphere(new Point3D(-3.0f, 4.5f, -15.0f), new Vector3D(0.0f, 0.0f, 0.0f));
-    staticBall.setMaterial(Material.WOOD);
+    
+    float rad2 = radians(10.0f);
+    Point3D p2 = new Point3D(
+        -15.0f + 12.0f * cos(rad2) - sin(rad2) * 0.6f, 
+        1.0f + 12.0f * sin(rad2) + cos(rad2) * 0.6f, 
+        -15.0f
+    );
+    CyanSphere staticBall = new CyanSphere(p2, new Vector3D(0.0f, 0.0f, 0.0f));
     particles.add(staticBall);
     loneParticles.add(staticBall);
 
     AnalyticalSlope slope3 = new AnalyticalSlope(new Point3D(-15.0f, 1.0f, 15.0f), 25.0f, 10.0f, 35.0f, Material.WOOD);
     analyticalSlopes.add(slope3);
-    SmallSphere rollingBall = new SmallSphere(new Point3D(-3.0f, 14.5f, 15.0f), new Vector3D(0.0f, 0.0f, 0.0f));
-    rollingBall.setMaterial(Material.STEEL);
+    
+    float rad3 = radians(35.0f);
+    Point3D p3 = new Point3D(
+        -15.0f + 12.0f * cos(rad3) - sin(rad3) * 0.7f, 
+        1.0f + 12.0f * sin(rad3) + cos(rad3) * 0.7f, 
+        15.0f
+    );
+    PurpleSphere rollingBall = new PurpleSphere(p3, new Vector3D(0.0f, 0.0f, 0.0f));
     particles.add(rollingBall);
     loneParticles.add(rollingBall);
 
+    // Scatter collectible variety across the map
     for (int i = 0; i < 120; i++) {
         float angle = random(TWO_PI);
         float dist = random(25.0f, 200.0f);
         float px = cos(angle) * dist;
         float pz = sin(angle) * dist;
         
-        Particle scatteredPart;
+        Particle collectible;
         if (i % 3 == 0) {
-            SpaceSphere ball = new SpaceSphere(new Point3D(px, 1.0f, pz), new Vector3D());
-            ball.setMaterial(Material.RUBBER);
-            scatteredPart = ball;
+            collectible = new CyanSphere(new Point3D(px, 1.0f, pz), new Vector3D());
         } else if (i % 3 == 1) {
-            SmallSphere sm = new SmallSphere(new Point3D(px, 1.0f, pz), new Vector3D());
-            sm.setMaterial(Material.WOOD);
-            scatteredPart = sm;
+            collectible = new PurpleSphere(new Point3D(px, 1.0f, pz), new Vector3D());
         } else {
-            SmallSphere sm = new SmallSphere(new Point3D(px, 1.0f, pz), new Vector3D());
-            sm.setMaterial(Material.STEEL);
-            scatteredPart = sm;
+            BlueSphere sm = new BlueSphere(new Point3D(px, 1.0f, pz), new Vector3D());
+            sm.setMaterial(Material.WOOD);
+            collectible = sm;
         }
         
-        particles.add(scatteredPart);
-        loneParticles.add(scatteredPart);
+        particles.add(collectible);
+        loneParticles.add(collectible);
     }
 
     for (Particle p : particles) {
@@ -237,29 +257,46 @@ int getConnectionCount(Particle p) {
 }
 
 void updateBlobLogic() {
+    // 1. DETACHMENT
     for (int i = activeConnections.size() - 1; i >= 0; i--) {
         BlobConnection conn = activeConnections.get(i);
         if (conn.link.length() > DETACH_DISTANCE) {
             conn.link.breakLink();
             activeConnections.remove(i);
-            
-            boolean stillConnected = false;
-            for (BlobConnection otherConn : activeConnections) {
-                if (otherConn.parent == conn.child || otherConn.child == conn.child) {
-                    stillConnected = true;
-                    break;
-                }
-            }
-            
-            if (!stillConnected && conn.child != player) {
-                blobParticles.remove(conn.child);
-                if (!loneParticles.contains(conn.child)) {
-                    loneParticles.add(conn.child);
-                }
-            }
         }
     }
 
+    // 2. DYNAMIC NETWORK REBUILD (BFS)
+    blobParticles.clear();
+    loneParticles.clear();
+    
+    ArrayList<Particle> queue = new ArrayList<Particle>();
+    if (player != null) {
+        blobParticles.add(player);
+        queue.add(player);
+    }
+    
+    while (!queue.isEmpty()) {
+        Particle curr = queue.remove(0);
+        for (BlobConnection conn : activeConnections) {
+            Particle neighbor = null;
+            if (conn.parent == curr) neighbor = conn.child;
+            else if (conn.child == curr) neighbor = conn.parent;
+
+            if (neighbor != null && !blobParticles.contains(neighbor)) {
+                blobParticles.add(neighbor);
+                queue.add(neighbor);
+            }
+        }
+    }
+    
+    for (Particle p : particles) {
+        if (p.getInverseMass() > 0.0f && !blobParticles.contains(p)) {
+            loneParticles.add(p);
+        }
+    }
+
+    // 3. ATTACHMENT
     boolean attachmentFound = true;
     while (attachmentFound) {
         attachmentFound = false;
@@ -273,9 +310,7 @@ void updateBlobLogic() {
                 activeConnections.add(new BlobConnection(player, lone, newLink));
                 
                 loneParticles.remove(i);
-                if (!blobParticles.contains(lone)) {
-                    blobParticles.add(lone);
-                }
+                blobParticles.add(lone);
                 attachmentFound = true;
                 break;
             }
@@ -302,9 +337,7 @@ void updateBlobLogic() {
                 activeConnections.add(new BlobConnection(nearestBlobNode, lone, newLink));
                 
                 loneParticles.remove(i);
-                if (!blobParticles.contains(lone)) {
-                    blobParticles.add(lone);
-                }
+                blobParticles.add(lone);
                 attachmentFound = true;
                 break; 
             }
@@ -337,15 +370,17 @@ void updateBlobLogic() {
     }
 }
 
-// Camera smoothing state variables
-Point3D smoothedCamTarget = null;
-
 void drawGameplay() {
     float frameTime = min(customDeltaTime, PhysicsConstants.MAX_FRAME_TIME);
     accumulator += frameTime;
 
     updatePlayerControls();
     updateBlobLogic();
+    
+    // --- WIN CONDITION ---
+    if (blobParticles.size() >= 21) {
+        currentState = GameState.GameOver;
+    }
     
     if (explosionRequested && player != null) {
         Point3D pos = player.getPosition();
@@ -360,23 +395,19 @@ void drawGameplay() {
     }
 
     arena.setupLighting(this);
-    hint(ENABLE_DEPTH_TEST); // Ensure 3D depth calculations are active for the world
+    hint(ENABLE_DEPTH_TEST); 
     
     if (player != null) {
         Point3D pos = player.getPosition();
-        Vector3D vel = player.getVelocity();
-        Vector3D flatVel = new Vector3D(vel.getX(), 0.0f, vel.getZ());
         
-        if (flatVel.lengthSquared() > 0.01f) {
-            currentCamDir = currentCamDir.mult(0.95f).add(flatVel.normalized().mult(0.05f)).normalized();
-        }
-        
-        if (totalTime < 2.5f) {
-            currentCamDir = new Vector3D(0.0f, 0.0f, 1.0f);
-        }
+        // Convert yaw and pitch angles into a 3D direction vector
+        float dirX = sin(camYaw) * cos(camPitch);
+        float dirY = -sin(camPitch);
+        float dirZ = cos(camYaw) * cos(camPitch);
+        currentCamDir = new Vector3D(dirX, dirY, dirZ).normalized();
 
-        float distanceBehind = 26.0f;
-        float heightAbove = 10.0f; 
+        float distanceBehind = 35.0f;
+        float heightAbove = 20.0f; 
         
         Point3D targetCamPos = new Point3D(
             pos.getX() - currentCamDir.getX() * distanceBehind, 
@@ -423,7 +454,7 @@ void drawGameplay() {
 
     if (showForceDebug) RenderForceDebug();
     
-    renderHUD(); // Automatically calls reset2DContext() which disables depth test for clean overlay rendering
+    renderHUD(); 
 }
 
 void updateParticles(float timestep) {
@@ -475,6 +506,17 @@ void RenderForceDebug() {
 
 public void mousePressed() { if (currentState != GameState.Playing) return; }
 public void mouseWheel(MouseEvent event) { if (currentState != GameState.Playing) return; }
+
+public void mouseDragged() {
+    if (currentState == GameState.Playing) {
+        // Rotate camera based on mouse movement
+        camYaw -= (mouseX - pmouseX) * 0.008f;
+        camPitch += (mouseY - pmouseY) * 0.008f;
+        // Prevent the camera from flipping upside down or going too low
+        camPitch = constrain(camPitch, 0.1f, HALF_PI - 0.1f);
+    }
+}
+
 public void keyPressed() {
     if (currentState == GameState.Menu) {
         if (key == ' ' || keyCode == ENTER) resetGame();
@@ -492,10 +534,20 @@ public void keyPressed() {
         if (k == 's') pushBack = true;
         if (k == 'a') pushLeft = true;
         if (k == 'd') pushRight = true;
+        if (k == 'q') {
+            currentState = GameState.GameOver; // End the game early
+        }
         if (key == ' ') {
-            // Give the player core (and attached blob) a small upward jump impulse
             if (player != null) {
-                player.applyImpulse(new Vector3D(0.0f, 250.0f, 0.0f));
+                float totalBlobMass = 0.0f;
+                for (Particle p : blobParticles) {
+                    if (p.getInverseMass() > 0.0f) totalBlobMass += p.getMass();
+                }
+                
+                float massRatio = totalBlobMass / player.getMass();
+                float dynamicImpulse = 120.0f * (1.0f + (massRatio - 1.0f) * 0.6f); 
+                
+                player.applyImpulse(new Vector3D(0.0f, dynamicImpulse, 0.0f));
             }
         }
         if (k == 'f' && !debugKeyDown) {
@@ -534,6 +586,7 @@ void updatePlayerControls() {
     if (thrustGenerator == null || pushGenerator == null) return;
     thrustGenerator.setActive(thrustHeld);
 
+    // Movement is relative to camera direction
     Vector3D forward = new Vector3D(currentCamDir.getX(), 0.0f, currentCamDir.getZ()).normalized();
     Vector3D right = new Vector3D(0.0f, 1.0f, 0.0f).cross(forward);
 
@@ -547,7 +600,19 @@ void updatePlayerControls() {
         pushGenerator.setActive(false);
         return;
     }
-    pushGenerator.setForce(dir.normalized().mult(PUSH_FORCE));
+    
+    float totalBlobMass = 0.0f;
+    for (Particle p : blobParticles) {
+        if (p.getInverseMass() > 0.0f) {
+            totalBlobMass += p.getMass();
+        }
+    }
+    
+    // Scale push force based on collected mass so heavy blobs don't get permanently stuck
+    float massRatio = totalBlobMass / player.getMass();
+    float dynamicPushForce = PUSH_FORCE * (1.0f + (massRatio - 1.0f) * 0.4f);
+    
+    pushGenerator.setForce(dir.normalized().mult(dynamicPushForce));
     pushGenerator.setActive(true);
 }
 
@@ -572,11 +637,11 @@ void drawMenuScreen() {
     background(20, 24, 35);
     textAlign(CENTER, CENTER);
     fill(0, 220, 255);
-    textSize(42);
-    text("PROJECTILE SIMULATOR", width / 2.0f, height / 2.0f - 80.0f);
+    textSize(54);
+    text("BLOB SIMULATOR", width / 2.0f, height / 2.0f - 100.0f);
     fill(220);
-    textSize(20);
-    text("There will be text", width / 2.0f, height / 2.0f - 10.0f);
+    textSize(28);
+    text("OBJECTIVE: Build a 20-particle blob!", width / 2.0f, height / 2.0f - 20.0f);
     fill(50, 255, 140);
     textSize(24);
     text("Press [SPACE] or [ENTER] to Start", width / 2.0f, height / 2.0f + 120.0f);
@@ -587,24 +652,25 @@ void drawGameOverScreen() {
     background(15, 15, 20);
     textAlign(CENTER, CENTER);
     fill(70, 255, 70);
-    textSize(48);
-    text("GOAL REACHED", width / 2.0f, height / 2.0f - 60.0f);
+    textSize(54);
+    text("BLOB COMPLETE!", width / 2.0f, height / 2.0f - 60.0f);
     fill(230);
-    textSize(24);
+    textSize(28);
     String str = String.format("%.2f", totalTime);
-    text("Final Time: " + str + " s", width / 2.0f, height / 2.0f);
+    text("Final Time: " + str + " seconds", width / 2.0f, height / 2.0f);
     fill(100, 200, 255);
     textSize(20);
-    text("Press [R] to Play Again", width / 2.0f, height / 2.0f + 60.0f);
-    text("Press [SPACE] or [ESC] for Menu", width / 2.0f, height / 2.0f + 90.0f);
+    text("Press [R] to Play Again", width / 2.0f, height / 2.0f + 80.0f);
+    text("Press [SPACE] or [ESC] for Menu", width / 2.0f, height / 2.0f + 110.0f);
 }
 
 void reset2DContext() { 
-    hint(DISABLE_DEPTH_TEST); // Disables depth buffer clipping for 2D UI elements
+    hint(DISABLE_DEPTH_TEST); 
     camera(); 
     noLights(); 
     noStroke(); 
 }
+
 String formatWithCommas(int value) { return String.format("%,d", value); }
 void renderHUD() { reset2DContext(); renderScoreHUD(); renderSidePanel(); }
 
@@ -621,34 +687,34 @@ void renderScoreHUD() {
     textAlign(CENTER, CENTER);
     fill(255, 210, 60);
     textSize(20);
-    text("BLOB SIZE", cx, cy - 34.0f);
+    text("BLOB SCORE", cx, cy - 34.0f);
     
     textSize(54);
     fill(70, 255, 120);
-    text(blobParticles.size(), cx, cy + 10.0f);
+    int collectedScore = Math.max(0, blobParticles.size() - 1);
+    text(collectedScore + " / 20", cx, cy + 10.0f);
 }
 
 void renderSidePanel() {
     int totalCount = particles.size();
-    float playerHeight = (player != null) ? player.getPosition().getY() : 0.0f;
+    int collectedScore = Math.max(0, blobParticles.size() - 1);
     String[] statLines = {
         "FPS: " + Math.round(customFPS) + "   ms/frame: " + Math.round(smoothedDeltaTime * 1000.0f),
         "Particle instances: " + formatWithCommas(totalCount),
-        "Blob count: " + formatWithCommas(blobParticles.size()),
+        "Blob Score (Attached): " + formatWithCommas(collectedScore),
         "Force registrations: " + forceRegistry.size(),
         "Player contact: " + (player != null ? contactFriction.getState(player).name() : "-"),
         "Player material: " + (player != null ? player.getMaterial().name() : "-"),
     };
 
-String[] controlLines = {
+    String[] controlLines = {
         "Integration [I]: " + currentIntegrationMode.name(),
-        "Thrust [T]: " + ((thrustGenerator != null && thrustGenerator.isActive()) ? "ON" : "OFF"),
-        "Push [WASD] | Jump [SPACE]",
-        "Debug arrow [F]",
-        "Explosion [E]",
+        "Move [WASD] | Jump [SPACE]",
+        "Rotate Camera [Drag Mouse]",
+        "End Game Early [Q]",
+        "Debug arrow [F] | Explosion [E]",
         "Friction [C]: " + (frictionEnabled ? "ON" : "OFF"),
-        "Player material [M]",
-        "End screen [G]"
+        "Player material [M]"
     };
 
     float statLineHeight = 16.0f;

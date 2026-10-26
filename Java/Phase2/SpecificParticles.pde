@@ -14,11 +14,12 @@ class Earth extends Particle {
     void draw() {}
 }
 
-class SpaceSphere extends Particle {
-    float radius = 1.0f;
+// Player core sphere
+class RedSphere extends Particle {
+    float radius = 1.2f;
 
-    public SpaceSphere(Point3D pos, Vector3D vel) {
-        super(pos, vel, new Vector3D(), 20.0f, 1.0f, true);
+    public RedSphere(Point3D pos, Vector3D vel) {
+        super(pos, vel, new Vector3D(), 15.0f, 1.0f, true);
     }
     
     @Override
@@ -28,7 +29,7 @@ class SpaceSphere extends Particle {
     void draw() {
         pushMatrix();
         translate(getPosition().getX(), getPosition().getY(), getPosition().getZ());
-        fill(255, 50, 50);
+        fill(255, 40, 40);
         noStroke();
         sphereDetail(16);
         sphere(radius);
@@ -36,11 +37,13 @@ class SpaceSphere extends Particle {
     }
 }
 
-class SmallSphere extends Particle {
-    float radius = 0.5f;
+// Collectible sphere variant 1
+class CyanSphere extends Particle {
+    float radius = 0.6f;
 
-    public SmallSphere(Point3D pos, Vector3D vel) {
-        super(pos, vel, new Vector3D(), 20.0f, 1.0f, true);
+    public CyanSphere(Point3D pos, Vector3D vel) {
+        super(pos, vel, new Vector3D(), 3.0f, 1.0f, true);
+        setMaterial(Material.RUBBER);
     }
     
     @Override
@@ -50,7 +53,54 @@ class SmallSphere extends Particle {
     void draw() {
         pushMatrix();
         translate(getPosition().getX(), getPosition().getY(), getPosition().getZ());
-        fill(0, 50, 50);
+        fill(50, 255, 180);
+        noStroke();
+        sphereDetail(16);
+        sphere(radius);
+        popMatrix();
+    }
+}
+
+// Collectible sphere variant 2
+class PurpleSphere extends Particle {
+    float radius = 0.7f;
+
+    public PurpleSphere(Point3D pos, Vector3D vel) {
+        super(pos, vel, new Vector3D(), 12.0f, 1.0f, true);
+        setMaterial(Material.STEEL);
+    }
+    
+    @Override
+    float getRadius() { return radius; }
+
+    @Override
+    void draw() {
+        pushMatrix();
+        translate(getPosition().getX(), getPosition().getY(), getPosition().getZ());
+        fill(160, 50, 220);
+        noStroke();
+        sphereDetail(16);
+        sphere(radius);
+        popMatrix();
+    }
+}
+
+// Collectible sphere variant 3
+class BlueSphere extends Particle {
+    float radius = 0.5f;
+
+    public BlueSphere(Point3D pos, Vector3D vel) {
+        super(pos, vel, new Vector3D(), 5.0f, 1.0f, true);
+    }
+    
+    @Override
+    float getRadius() { return radius; }
+
+    @Override
+    void draw() {
+        pushMatrix();
+        translate(getPosition().getX(), getPosition().getY(), getPosition().getZ());
+        fill(0, 150, 200);
         noStroke();
         sphereDetail(16);
         sphere(radius);
@@ -79,7 +129,6 @@ class AnalyticalSlope {
         float sinA = sin(rad);
         float cosA = cos(rad);
 
-        // Normal points perpendicular to the slope surface
         this.normal = new Vector3D(-sinA, cosA, 0.0f).normalized();
     }
 

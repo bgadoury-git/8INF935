@@ -453,7 +453,7 @@ class Tests {
         cables.clear();
 
         Earth ground = new Earth(new Point3D(0.0f, -6371000.0f, 0.0f));
-        SpaceSphere ball = new SpaceSphere(new Point3D(0.0f, 1.0f, 0.0f), new Vector3D(0.0f, 0.0f, v0));
+        RedSphere ball = new RedSphere(new Point3D(0.0f, 1.0f, 0.0f), new Vector3D(0.0f, 0.0f, v0));
         ball.setMaterial(material);
         particles.add(ground);
         particles.add(ball);
@@ -499,7 +499,7 @@ class Tests {
         boolean passed = true;
         String tag = " [" + mode.name() + "]";
         float g = PhysicsConstants.GRAVITY;
-        float m = new SpaceSphere(new Point3D(), new Vector3D()).getMass();
+        float m = new RedSphere(new Point3D(), new Vector3D()).getMass();
         boolean wasEnabled = contactFriction.isEnabled();
         contactFriction.setEnabled(true);
 
