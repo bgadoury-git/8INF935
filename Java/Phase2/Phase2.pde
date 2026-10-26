@@ -504,6 +504,12 @@ void renderHUD() {
     renderSidePanel(); 
 }
 
+void RenderRods() {
+    for (Rod rod : rods) {
+        rod.draw();
+    }
+}
+
 void updateParticles(float timestep) {
     forceRegistry.updateForces(timestep);
     for (Particle particle : particles) {
