@@ -258,7 +258,6 @@ class SquareBody extends GeometricBody {
     float width, height, depth;
 
     // 8 corner weight ratios and distributed masses
-    // Corner signs: (-,-,-), (+,-,-), (-,+,-), (+,+,-), (-,-,+), (+,-,+), (-,+,+), (+,+,+)
     float[] cornerWeights = { 1, 1, 1, 1, 1, 1, 1, 1 };
     float[] cornerMasses = new float[8];
 
@@ -278,7 +277,7 @@ class SquareBody extends GeometricBody {
         computeGravityCenter();
     }
 
-    // Uneven mass constructor using a directional bias vector (components in [-1, 1] or arbitrary weights)
+    // Uneven mass constructor using a directional bias vector
     public SquareBody(Point3D position, Quaternion orientation, float totalMass,
                       float width, float height, float depth, Vector3D massBias) {
         super(position, orientation, totalMass);
@@ -300,7 +299,7 @@ class SquareBody extends GeometricBody {
         computeGravityCenter();
     }
 
-    // Sets weights from a directional bias vector (e.g., (1, -0.5, 0) biases toward +X and -Y)
+    // Sets weights from a directional bias vector
     void massDistribution(Vector3D bias) {
         float bx = (bias != null) ? bias.getX() : 0.0f;
         float by = (bias != null) ? bias.getY() : 0.0f;
@@ -368,7 +367,7 @@ class SquareBody extends GeometricBody {
         updateTransformMatrix();
     }
 
-    // Slab method for line segment vs. local AABB intersection (centered at geometricCenter)
+    // Slab method for line segment vs. local AABB intersection
     @Override
     Point3D interceptLine(Point3D a, Point3D b) {
         updateTransformMatrix();
@@ -501,7 +500,6 @@ class cylenderBody extends GeometricBody {
         float gy = 0.0f;
 
         if (totalMass > 0.0f) {
-            // Top cap is at +halfH, bottom cap at -halfH, lateral wall centered at 0
             gy = (topCapMass * halfH + bottomCapMass * (-halfH) + lateralMass * 0.0f) / totalMass;
         }
 
@@ -619,7 +617,7 @@ class cylenderBody extends GeometricBody {
 }
 
 // ==========================================
-// GraphBody & Complex Pattern Enum
+// GraphBody, Faces & Complex Pattern Enum
 // ==========================================
 enum GraphShapePattern {
     TORUS,
@@ -642,8 +640,20 @@ class GraphNode {
     }
 }
 
+// Triangular window formed by three mutually connected graph nodes
+class GraphFace {
+    GraphNode a, b, c;
+
+    GraphFace(GraphNode a, GraphNode b, GraphNode c) {
+        this.a = a;
+        this.b = b;
+        this.c = c;
+    }
+}
+
 class GraphBody extends RigidBody {
     ArrayList<GraphNode> nodes;
+    ArrayList<GraphFace> faces;
     int nodeCount;
     GraphShapePattern shapePattern;
     float shapeRadius = 7.0f;
@@ -674,7 +684,8 @@ class GraphBody extends RigidBody {
                      float jitterRatio, Vector3D weightSkew) {
         super(position, orientation, totalMass);
         this.nodes = new ArrayList<GraphNode>();
-        this.nodeCount = Math.max(2, n);
+        this.faces = new ArrayList<GraphFace>();
+        this.nodeCount = Math.max(3, n);
         this.shapePattern = (pattern != null) ? pattern : GraphShapePattern.TORUS;
         this.shapeRadius = shapeRadius;
         this.jitterRatio = Math.max(0.0f, jitterRatio);
@@ -687,7 +698,7 @@ class GraphBody extends RigidBody {
 
     // Regenerate shape and apply skew at runtime
     void generateShape(int n, GraphShapePattern pattern, Vector3D skew) {
-        this.nodeCount = Math.max(2, n);
+        this.nodeCount = Math.max(3, n);
         this.shapePattern = (pattern != null) ? pattern : GraphShapePattern.TORUS;
         this.weightSkew = (skew != null) ? skew : new Vector3D();
         generateShape();
@@ -695,9 +706,10 @@ class GraphBody extends RigidBody {
         computeGravityCenter();
     }
 
-    // Builds the graph with n semi-randomly distributed nodes according to shapePattern
+    // Builds the graph with n semi-randomly distributed nodes and triangulates its windows
     void generateShape() {
         nodes.clear();
+        faces.clear();
         float jitter = shapeRadius * jitterRatio;
         float goldenAngle = (float)(Math.PI * (3.0 - Math.sqrt(5.0)));
 
@@ -710,7 +722,6 @@ class GraphBody extends RigidBody {
 
             switch (shapePattern) {
                 case TORUS: {
-                    // Major ring R + minor tube r with semi-random jitter
                     float majorR = shapeRadius;
                     float minorR = shapeRadius * 0.35f;
                     float u = (TWO_PI * i) / nodeCount + random(-0.15f, 0.15f);
@@ -725,7 +736,6 @@ class GraphBody extends RigidBody {
                 }
 
                 case HELIX: {
-                    // 3D spiral coil with 2.5 turns and radial jitter
                     float turns = 2.5f;
                     float angle = t * turns * TWO_PI + random(-0.15f, 0.15f);
                     float y = (t - 0.5f) * (shapeRadius * 2.2f) + jy * 0.5f;
@@ -739,7 +749,6 @@ class GraphBody extends RigidBody {
                 }
 
                 case STARBURST: {
-                    // Central core + spiky arms radiating outward in 3D
                     int numArms = Math.max(4, Math.min(8, nodeCount / 3));
                     int armIdx = i % numArms;
                     float armProgress = (float)(i / numArms) / Math.max(1, (nodeCount / numArms));
@@ -756,7 +765,6 @@ class GraphBody extends RigidBody {
                 }
 
                 case TREFOIL_KNOT: {
-                    // Parametric 3D trefoil knot scaled to shapeRadius
                     float phi = (TWO_PI * i) / nodeCount + random(-0.1f, 0.1f);
                     float scale = shapeRadius * 0.35f;
                     float x = (float)(Math.sin(phi) + 2.0 * Math.sin(2.0 * phi)) * scale + jx * 0.4f;
@@ -767,10 +775,8 @@ class GraphBody extends RigidBody {
                 }
 
                 case DUMBBELL: {
-                    // Two heavy end-lobes connected by a thin central bridge
                     float bridgeFraction = 0.25f;
                     if (t < bridgeFraction) {
-                        // Central bridge along X-axis
                         float bt = (t / bridgeFraction) * 2.0f - 1.0f;
                         pos = new Point3D(
                             bt * shapeRadius * 0.7f,
@@ -778,7 +784,6 @@ class GraphBody extends RigidBody {
                             jz * 0.35f
                         );
                     } else {
-                        // Left (-X) or Right (+X) spherical lobe
                         float side = (i % 2 == 0) ? 1.0f : -1.0f;
                         float lobeR = shapeRadius * 0.45f;
                         float u = random(-1.0f, 1.0f);
@@ -796,7 +801,6 @@ class GraphBody extends RigidBody {
 
                 case CLUSTER:
                 default: {
-                    // Organic 3D cluster concentrated near the center
                     float r = shapeRadius * (float)Math.pow(random(0.0f, 1.0f), 0.6f);
                     float u = random(-1.0f, 1.0f);
                     float theta = random(0.0f, TWO_PI);
@@ -813,8 +817,8 @@ class GraphBody extends RigidBody {
             nodes.add(new GraphNode(pos, 1.0f));
         }
 
-        // Connect each node to its k nearest neighbors to form a cohesive 3D wireframe
-        int kNeighbors = Math.min(3, nodeCount - 1);
+        // Connect each node to its k nearest neighbors so triangular windows form naturally
+        int kNeighbors = Math.min(4, nodeCount - 1);
         for (int i = 0; i < nodeCount; i++) {
             GraphNode current = nodes.get(i);
             boolean[] chosen = new boolean[nodeCount];
@@ -837,20 +841,124 @@ class GraphBody extends RigidBody {
                 }
             }
         }
+
+        // Stitch sequential backbone edges for continuous curves so no gaps remain
+        if (shapePattern == GraphShapePattern.TORUS ||
+            shapePattern == GraphShapePattern.HELIX ||
+            shapePattern == GraphShapePattern.TREFOIL_KNOT) {
+            for (int i = 0; i < nodeCount - 1; i++) {
+                connectNodes(nodes.get(i), nodes.get(i + 1));
+            }
+            if (shapePattern != GraphShapePattern.HELIX && nodeCount > 2) {
+                connectNodes(nodes.get(nodeCount - 1), nodes.get(0));
+            }
+        }
+
+        buildFaces();
     }
 
     void connectNodes(GraphNode a, GraphNode b) {
+        if (a == b) return;
         if (!a.neighbors.contains(b)) a.neighbors.add(b);
         if (!b.neighbors.contains(a)) b.neighbors.add(a);
     }
 
-    // Distributes total weight using the stored weightSkew vector (even when weightSkew is (0,0,0))
+    // Ensures every node belongs to at least one triangular plane (GraphFace)
+    void buildFaces() {
+        faces.clear();
+        int count = nodes.size();
+        if (count < 3) return;
+
+        // 1. Close open 4-node quad windows by adding the shorter diagonal edge
+        for (int i = 0; i < count; i++) {
+            GraphNode ni = nodes.get(i);
+            for (int j = i + 1; j < count; j++) {
+                GraphNode nj = nodes.get(j);
+                if (!ni.neighbors.contains(nj)) continue;
+
+                for (int k = j + 1; k < count; k++) {
+                    GraphNode nk = nodes.get(k);
+                    if (!nj.neighbors.contains(nk) || ni.neighbors.contains(nk)) continue;
+
+                    for (int l = i + 1; l < count; l++) {
+                        if (l == j || l == k) continue;
+                        GraphNode nl = nodes.get(l);
+                        if (nk.neighbors.contains(nl) && nl.neighbors.contains(ni) && !nj.neighbors.contains(nl)) {
+                            // Split quad (ni - nj - nk - nl) along its shorter diagonal
+                            float diagIK = ni.localPos.distanceSquaredTo(nk.localPos);
+                            float diagJL = nj.localPos.distanceSquaredTo(nl.localPos);
+                            if (diagIK <= diagJL) {
+                                connectNodes(ni, nk);
+                            } else {
+                                connectNodes(nj, nl);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Extract all closed 3-node cycles (triangular windows)
+        boolean[] inFace = new boolean[count];
+        for (int i = 0; i < count; i++) {
+            GraphNode ni = nodes.get(i);
+            for (int j = i + 1; j < count; j++) {
+                GraphNode nj = nodes.get(j);
+                if (!ni.neighbors.contains(nj)) continue;
+
+                for (int k = j + 1; k < count; k++) {
+                    GraphNode nk = nodes.get(k);
+                    if (ni.neighbors.contains(nk) && nj.neighbors.contains(nk)) {
+                        faces.add(new GraphFace(ni, nj, nk));
+                        inFace[i] = true;
+                        inFace[j] = true;
+                        inFace[k] = true;
+                    }
+                }
+            }
+        }
+
+        // 3. Guarantee every remaining node belongs to at least one triangle
+        for (int i = 0; i < count; i++) {
+            if (inFace[i]) continue;
+            GraphNode node = nodes.get(i);
+
+            // Find the two closest distinct nodes in the graph
+            int best1 = -1, best2 = -1;
+            float d1 = Float.MAX_VALUE, d2 = Float.MAX_VALUE;
+
+            for (int j = 0; j < count; j++) {
+                if (i == j) continue;
+                float dSq = node.localPos.distanceSquaredTo(nodes.get(j).localPos);
+                if (dSq < d1) {
+                    d2 = d1; best2 = best1;
+                    d1 = dSq; best1 = j;
+                } else if (dSq < d2) {
+                    d2 = dSq; best2 = j;
+                }
+            }
+
+            if (best1 != -1 && best2 != -1) {
+                GraphNode n1 = nodes.get(best1);
+                GraphNode n2 = nodes.get(best2);
+                connectNodes(node, n1);
+                connectNodes(node, n2);
+                connectNodes(n1, n2);
+                faces.add(new GraphFace(node, n1, n2));
+                inFace[i] = true;
+                inFace[best1] = true;
+                inFace[best2] = true;
+            }
+        }
+    }
+
+
+    // Distributes total weight using the stored weightSkew vector
     void distributeWeights() {
         distributeWeights(this.weightSkew);
     }
 
-    // Skews weight distribution along a 3D direction vector.
-    // Higher skew magnitude creates a steeper mass gradient across the shape.
+    // Skews weight distribution along a 3D direction vector
     void distributeWeights(Vector3D skew) {
         if (nodes.isEmpty()) return;
         this.weightSkew = (skew != null) ? skew : new Vector3D();
@@ -864,7 +972,6 @@ class GraphBody extends RigidBody {
             return;
         }
 
-        // Compute normalized projection along skew direction for each node
         float[] rawWeights = new float[nodes.size()];
         float weightSum = 0.0f;
         float invScale = 1.0f / Math.max(1.0f, shapeRadius);
@@ -873,7 +980,6 @@ class GraphBody extends RigidBody {
             Point3D p = nodes.get(i).localPos;
             Vector3D posVec = new Vector3D(p.getX(), p.getY(), p.getZ());
             float projection = posVec.dot(this.weightSkew) * invScale;
-            // Exponential weighting guarantees strictly positive weights and smooth skewing
             float w = (float)Math.exp(projection);
             rawWeights[i] = w;
             weightSum += w;
@@ -931,7 +1037,38 @@ class GraphBody extends RigidBody {
         updateTransformMatrix();
     }
 
-    // Checks line segment intersection against spheres around each graph node
+    // Helper: Möller–Trumbore ray-segment vs. single triangular window in local space
+    private float intersectTriangleSegment(Point3D localA, Vector3D dir,
+                                           Point3D p0, Point3D p1, Point3D p2) {
+        Vector3D v0 = new Vector3D(p0.getX(), p0.getY(), p0.getZ());
+        Vector3D v1 = new Vector3D(p1.getX(), p1.getY(), p1.getZ());
+        Vector3D v2 = new Vector3D(p2.getX(), p2.getY(), p2.getZ());
+
+        Vector3D edge1 = v1.sub(v0);
+        Vector3D edge2 = v2.sub(v0);
+        Vector3D h = dir.cross(edge2);
+        float det = edge1.dot(h);
+
+        if (Math.abs(det) < 1e-6f) return -1.0f;
+
+        float invDet = 1.0f / det;
+        Vector3D orig = new Vector3D(localA.getX(), localA.getY(), localA.getZ());
+        Vector3D s = orig.sub(v0);
+        float u = invDet * s.dot(h);
+        if (u < 0.0f || u > 1.0f) return -1.0f;
+
+        Vector3D q = s.cross(edge1);
+        float v = invDet * dir.dot(q);
+        if (v < 0.0f || u + v > 1.0f) return -1.0f;
+
+        float t = invDet * edge2.dot(q);
+        if (t >= 0.0f && t <= 1.0f) {
+            return t;
+        }
+        return -1.0f;
+    }
+
+    // Detects collision against all triangular windows (faces) formed by the graph edges
     @Override
     Point3D interceptLine(Point3D a, Point3D b) {
         updateTransformMatrix();
@@ -946,21 +1083,35 @@ class GraphBody extends RigidBody {
         float bestT = Float.MAX_VALUE;
         boolean hit = false;
 
-        for (GraphNode node : nodes) {
-            Vector3D m = localA.sub(node.localPos);
-            float bCoef = m.dot(dir);
-            float cCoef = m.lengthSquared() - nodeHitRadius * nodeHitRadius;
-
-            if (cCoef > 0.0f && bCoef > 0.0f) continue;
-
-            float disc = bCoef * bCoef - lenSq * cCoef;
-            if (disc < 0.0f) continue;
-
-            float t = (-bCoef - (float)Math.sqrt(disc)) / lenSq;
-            if (t < 0.0f) t = 0.0f;
-            if (t <= 1.0f && t < bestT) {
+        // 1. Test every triangular window (plane) formed by the graph edges
+        for (GraphFace face : faces) {
+            float t = intersectTriangleSegment(
+                localA, dir,
+                face.a.localPos, face.b.localPos, face.c.localPos
+            );
+            if (t >= 0.0f && t < bestT) {
                 bestT = t;
                 hit = true;
+            }
+        }
+
+        // 2. Fallback: if the graph is degenerate (< 3 connected nodes), test vertex spheres
+        if (faces.isEmpty()) {
+            for (GraphNode node : nodes) {
+                Vector3D m = localA.sub(node.localPos);
+                float bCoef = m.dot(dir);
+                float cCoef = m.lengthSquared() - nodeHitRadius * nodeHitRadius;
+                if (cCoef > 0.0f && bCoef > 0.0f) continue;
+
+                float disc = bCoef * bCoef - lenSq * cCoef;
+                if (disc < 0.0f) continue;
+
+                float t = (-bCoef - (float)Math.sqrt(disc)) / lenSq;
+                if (t < 0.0f) t = 0.0f;
+                if (t <= 1.0f && t < bestT) {
+                    bestT = t;
+                    hit = true;
+                }
             }
         }
 
@@ -976,9 +1127,20 @@ class GraphBody extends RigidBody {
         pushMatrix();
         applyMatrix(getRotationMatrix().toPMatrix3D());
 
-        // Draw graph edges
-        stroke(180, 220, 255);
-        strokeWeight(2);
+        // 1. Draw solid translucent triangular windows (planes)
+        fill(110, 175, 255, 130);
+        noStroke();
+        beginShape(TRIANGLES);
+        for (GraphFace face : faces) {
+            vertex(face.a.localPos.getX(), face.a.localPos.getY(), face.a.localPos.getZ());
+            vertex(face.b.localPos.getX(), face.b.localPos.getY(), face.b.localPos.getZ());
+            vertex(face.c.localPos.getX(), face.c.localPos.getY(), face.c.localPos.getZ());
+        }
+        endShape();
+
+        // 2. Draw graph wireframe edges
+        stroke(200, 235, 255);
+        strokeWeight(1.8f);
         for (GraphNode node : nodes) {
             for (GraphNode neighbor : node.neighbors) {
                 line(node.localPos.getX(), node.localPos.getY(), node.localPos.getZ(),
@@ -986,15 +1148,15 @@ class GraphBody extends RigidBody {
             }
         }
 
-        // Draw graph vertices scaled by relative node weight
+        // 3. Draw graph vertices scaled by relative node weight
         float avgWeight = (gravityCenter != null && !nodes.isEmpty())
             ? (gravityCenter.getMass() / nodes.size()) : 1.0f;
 
         noStroke();
-        fill(120, 200, 255);
+        fill(140, 215, 255);
         for (GraphNode node : nodes) {
             float weightRatio = (avgWeight > 0.0f) ? (node.weight / avgWeight) : 1.0f;
-            float visualRadius = nodeHitRadius * 0.45f * constrain((float)Math.sqrt(weightRatio), 0.5f, 2.2f);
+            float visualRadius = nodeHitRadius * 0.4f * constrain((float)Math.sqrt(weightRatio), 0.5f, 2.0f);
             pushMatrix();
             translate(node.localPos.getX(), node.localPos.getY(), node.localPos.getZ());
             sphere(visualRadius);
