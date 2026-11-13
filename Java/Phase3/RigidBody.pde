@@ -1,0 +1,1008 @@
+// ==========================================
+// RigidBody & Derived Body Classes
+// ==========================================
+
+class RigidBody {
+    private Matrix4 RotationMatrix;
+    private Quaternion RotationQuaternion;
+    Particle gravityCenter;
+
+    public RigidBody() {
+        this.RotationQuaternion = new Quaternion();
+        this.gravityCenter = new GravityCenter(new Point3D(), new Vector3D());
+        this.RotationMatrix = new Matrix4(RotationQuaternion, gravityCenter.getPosition());
+    }
+
+    public RigidBody(Point3D position, Quaternion orientation, float mass) {
+        this.RotationQuaternion = (orientation != null) ? orientation.normalized() : new Quaternion();
+        this.gravityCenter = new GravityCenter(position, new Vector3D());
+        this.gravityCenter.setMass(mass);
+        this.RotationMatrix = new Matrix4(RotationQuaternion, gravityCenter.getPosition());
+    }
+
+    // --- Getters ---
+    Matrix4 getRotationMatrix() {
+        updateTransformMatrix();
+        return RotationMatrix;
+    }
+
+    Quaternion getRotationQuaternion() {
+        return RotationQuaternion;
+    }
+
+    Particle getGravityCenter() {
+        return gravityCenter;
+    }
+
+    Point3D getPosition() {
+        return gravityCenter.getPosition();
+    }
+
+    // --- Setters ---
+    void setRotationMatrix(Matrix4 rotationMatrix) {
+        this.RotationMatrix = rotationMatrix;
+    }
+
+    void setRotationQuaternion(Quaternion rotationQuaternion) {
+        this.RotationQuaternion = rotationQuaternion.normalized();
+        updateTransformMatrix();
+    }
+
+    void setGravityCenter(Particle gravityCenter) {
+        this.gravityCenter = gravityCenter;
+        updateTransformMatrix();
+    }
+
+    void setPosition(Point3D position) {
+        this.gravityCenter.setPosition(position);
+        updateTransformMatrix();
+    }
+
+    void updateTransformMatrix() {
+        if (RotationMatrix == null) {
+            RotationMatrix = new Matrix4();
+        }
+        Point3D pos = (gravityCenter != null) ? gravityCenter.getPosition() : new Point3D();
+        Quaternion q = (RotationQuaternion != null) ? RotationQuaternion : new Quaternion();
+        RotationMatrix.setOrientationAndPosition(q, pos);
+    }
+
+    // --- Virtual Functions ---
+    // Returns the intersection point in world coordinates, or null if no intersection occurs
+    Point3D interceptLine(Point3D a, Point3D b) {
+        return null;
+    }
+
+    void computeGravityCenter() {
+        updateTransformMatrix();
+    }
+
+    void draw() {
+        if (gravityCenter != null) {
+            gravityCenter.draw();
+        }
+    }
+}
+
+// ==========================================
+// GeometricBody
+// ==========================================
+class GeometricBody extends RigidBody {
+    Point3D geometricCenter;
+
+    public GeometricBody() {
+        super();
+        this.geometricCenter = new Point3D();
+    }
+
+    public GeometricBody(Point3D position, Quaternion orientation, float mass) {
+        super(position, orientation, mass);
+        this.geometricCenter = new Point3D();
+    }
+
+    Point3D getGeometricCenter() {
+        return geometricCenter;
+    }
+
+    void setGeometricCenter(Point3D geometricCenter) {
+        this.geometricCenter = geometricCenter;
+    }
+
+    // Distributes the total weight of gravityCenter across the geometry
+    void massDistribution() {}
+}
+
+// ==========================================
+// TriangleBody
+// ==========================================
+class TriangleBody extends GeometricBody {
+    // Triangle vertices in local space (relative to center of gravity)
+    float x1, y1, z1;
+    float x2, y2, z2;
+    float x3, y3, z3;
+
+    // Weight ratios and distributed vertex masses
+    float w1 = 1.0f, w2 = 1.0f, w3 = 1.0f;
+    float m1, m2, m3;
+
+    // Uniform mass constructor
+    public TriangleBody(Point3D position, Quaternion orientation, float totalMass,
+                        float x1, float y1, float z1,
+                        float x2, float y2, float z2,
+                        float x3, float y3, float z3) {
+        this(position, orientation, totalMass, x1, y1, z1, x2, y2, z2, x3, y3, z3, 1.0f, 1.0f, 1.0f);
+    }
+
+    // Uneven mass constructor with per-vertex weight ratios (w1, w2, w3)
+    public TriangleBody(Point3D position, Quaternion orientation, float totalMass,
+                        float x1, float y1, float z1,
+                        float x2, float y2, float z2,
+                        float x3, float y3, float z3,
+                        float w1, float w2, float w3) {
+        super(position, orientation, totalMass);
+        this.x1 = x1; this.y1 = y1; this.z1 = z1;
+        this.x2 = x2; this.y2 = y2; this.z2 = z2;
+        this.x3 = x3; this.y3 = y3; this.z3 = z3;
+        massDistribution(w1, w2, w3);
+        computeGravityCenter();
+    }
+
+    void massDistribution(float w1, float w2, float w3) {
+        this.w1 = Math.max(0.0f, w1);
+        this.w2 = Math.max(0.0f, w2);
+        this.w3 = Math.max(0.0f, w3);
+        massDistribution();
+    }
+
+    @Override
+    void massDistribution() {
+        float totalMass = (gravityCenter != null) ? gravityCenter.getMass() : 0.0f;
+        float weightSum = w1 + w2 + w3;
+        if (weightSum > 0.0f) {
+            m1 = totalMass * (w1 / weightSum);
+            m2 = totalMass * (w2 / weightSum);
+            m3 = totalMass * (w3 / weightSum);
+        } else {
+            float third = totalMass / 3.0f;
+            m1 = m2 = m3 = third;
+        }
+    }
+
+    @Override
+    void computeGravityCenter() {
+        // Unweighted geometric centroid
+        float cx = (x1 + x2 + x3) / 3.0f;
+        float cy = (y1 + y2 + y3) / 3.0f;
+        float cz = (z1 + z2 + z3) / 3.0f;
+
+        // Weighted center of mass
+        float totalMass = m1 + m2 + m3;
+        if (totalMass > 0.0f) {
+            float gx = (m1 * x1 + m2 * x2 + m3 * x3) / totalMass;
+            float gy = (m1 * y1 + m2 * y2 + m3 * y3) / totalMass;
+            float gz = (m1 * z1 + m2 * z2 + m3 * z3) / totalMass;
+
+            // Recenter local vertices around the center of gravity (0,0,0)
+            x1 -= gx; y1 -= gy; z1 -= gz;
+            x2 -= gx; y2 -= gy; z2 -= gz;
+            x3 -= gx; y3 -= gy; z3 -= gz;
+            geometricCenter = new Point3D(cx - gx, cy - gy, cz - gz);
+        } else {
+            geometricCenter = new Point3D(cx, cy, cz);
+        }
+        updateTransformMatrix();
+    }
+
+    // Möller–Trumbore ray-segment / triangle intersection in local space
+    @Override
+    Point3D interceptLine(Point3D a, Point3D b) {
+        updateTransformMatrix();
+        Matrix4 transform = getRotationMatrix();
+        Point3D localA = transform.transformInverse(a);
+        Point3D localB = transform.transformInverse(b);
+
+        Vector3D dir = localB.sub(localA);
+
+        Vector3D v0 = new Vector3D(x1, y1, z1);
+        Vector3D v1 = new Vector3D(x2, y2, z2);
+        Vector3D v2 = new Vector3D(x3, y3, z3);
+
+        Vector3D edge1 = v1.sub(v0);
+        Vector3D edge2 = v2.sub(v0);
+        Vector3D h = dir.cross(edge2);
+        float det = edge1.dot(h);
+
+        if (Math.abs(det) < 1e-6f) return null;
+
+        float invDet = 1.0f / det;
+        Vector3D orig = new Vector3D(localA.getX(), localA.getY(), localA.getZ());
+        Vector3D s = orig.sub(v0);
+        float u = invDet * s.dot(h);
+        if (u < 0.0f || u > 1.0f) return null;
+
+        Vector3D q = s.cross(edge1);
+        float v = invDet * dir.dot(q);
+        if (v < 0.0f || u + v > 1.0f) return null;
+
+        float t = invDet * edge2.dot(q);
+        if (t >= 0.0f && t <= 1.0f) {
+            Point3D localHit = localA.add(dir.mult(t));
+            return transform.transform(localHit);
+        }
+        return null;
+    }
+
+    @Override
+    void draw() {
+        updateTransformMatrix();
+        pushMatrix();
+        applyMatrix(getRotationMatrix().toPMatrix3D());
+        fill(100, 180, 255, 200);
+        stroke(255);
+        beginShape(TRIANGLES);
+        vertex(x1, y1, z1);
+        vertex(x2, y2, z2);
+        vertex(x3, y3, z3);
+        endShape();
+        popMatrix();
+
+        super.draw();
+    }
+}
+
+// ==========================================
+// SquareBody (Rectangular Prism / Box)
+// ==========================================
+class SquareBody extends GeometricBody {
+    // Box dimensions as floats
+    float width, height, depth;
+
+    // 8 corner weight ratios and distributed masses
+    // Corner signs: (-,-,-), (+,-,-), (-,+,-), (+,+,-), (-,-,+), (+,-,+), (-,+,+), (+,+,+)
+    float[] cornerWeights = { 1, 1, 1, 1, 1, 1, 1, 1 };
+    float[] cornerMasses = new float[8];
+
+    // Uniform cube constructor
+    public SquareBody(Point3D position, Quaternion orientation, float totalMass, float size) {
+        this(position, orientation, totalMass, size, size, size);
+    }
+
+    // Uniform box constructor
+    public SquareBody(Point3D position, Quaternion orientation, float totalMass,
+                      float width, float height, float depth) {
+        super(position, orientation, totalMass);
+        this.width = width;
+        this.height = height;
+        this.depth = depth;
+        massDistribution();
+        computeGravityCenter();
+    }
+
+    // Uneven mass constructor using a directional bias vector (components in [-1, 1] or arbitrary weights)
+    public SquareBody(Point3D position, Quaternion orientation, float totalMass,
+                      float width, float height, float depth, Vector3D massBias) {
+        super(position, orientation, totalMass);
+        this.width = width;
+        this.height = height;
+        this.depth = depth;
+        massDistribution(massBias);
+        computeGravityCenter();
+    }
+
+    // Uneven mass constructor using explicit 8-corner weight ratios
+    public SquareBody(Point3D position, Quaternion orientation, float totalMass,
+                      float width, float height, float depth, float[] cornerWeights) {
+        super(position, orientation, totalMass);
+        this.width = width;
+        this.height = height;
+        this.depth = depth;
+        massDistribution(cornerWeights);
+        computeGravityCenter();
+    }
+
+    // Sets weights from a directional bias vector (e.g., (1, -0.5, 0) biases toward +X and -Y)
+    void massDistribution(Vector3D bias) {
+        float bx = (bias != null) ? bias.getX() : 0.0f;
+        float by = (bias != null) ? bias.getY() : 0.0f;
+        float bz = (bias != null) ? bias.getZ() : 0.0f;
+
+        for (int i = 0; i < 8; i++) {
+            float sx = ((i & 1) == 0) ? -1.0f : 1.0f;
+            float sy = ((i & 2) == 0) ? -1.0f : 1.0f;
+            float sz = ((i & 4) == 0) ? -1.0f : 1.0f;
+            cornerWeights[i] = Math.max(0.01f, 1.0f + sx * bx + sy * by + sz * bz);
+        }
+        massDistribution();
+    }
+
+    // Sets weights directly from an 8-element array
+    void massDistribution(float[] weights) {
+        if (weights != null && weights.length == 8) {
+            for (int i = 0; i < 8; i++) {
+                cornerWeights[i] = Math.max(0.0f, weights[i]);
+            }
+        }
+        massDistribution();
+    }
+
+    @Override
+    void massDistribution() {
+        float totalMass = (gravityCenter != null) ? gravityCenter.getMass() : 0.0f;
+        float weightSum = 0.0f;
+        for (int i = 0; i < 8; i++) weightSum += cornerWeights[i];
+
+        if (weightSum > 0.0f) {
+            for (int i = 0; i < 8; i++) {
+                cornerMasses[i] = totalMass * (cornerWeights[i] / weightSum);
+            }
+        } else {
+            for (int i = 0; i < 8; i++) {
+                cornerMasses[i] = totalMass / 8.0f;
+            }
+        }
+    }
+
+    @Override
+    void computeGravityCenter() {
+        float totalMass = 0.0f;
+        float gx = 0.0f, gy = 0.0f, gz = 0.0f;
+        float hx = width * 0.5f, hy = height * 0.5f, hz = depth * 0.5f;
+
+        for (int i = 0; i < 8; i++) {
+            float cx = ((i & 1) == 0) ? -hx : hx;
+            float cy = ((i & 2) == 0) ? -hy : hy;
+            float cz = ((i & 4) == 0) ? -hz : hz;
+            gx += cornerMasses[i] * cx;
+            gy += cornerMasses[i] * cy;
+            gz += cornerMasses[i] * cz;
+            totalMass += cornerMasses[i];
+        }
+
+        if (totalMass > 0.0f) {
+            gx /= totalMass;
+            gy /= totalMass;
+            gz /= totalMass;
+        }
+        // Geometric center relative to the center of gravity at (0,0,0)
+        geometricCenter = new Point3D(-gx, -gy, -gz);
+        updateTransformMatrix();
+    }
+
+    // Slab method for line segment vs. local AABB intersection (centered at geometricCenter)
+    @Override
+    Point3D interceptLine(Point3D a, Point3D b) {
+        updateTransformMatrix();
+        Matrix4 transform = getRotationMatrix();
+        Point3D localA = transform.transformInverse(a);
+        Point3D localB = transform.transformInverse(b);
+        Vector3D dVec = localB.sub(localA);
+
+        float cx = geometricCenter.getX();
+        float cy = geometricCenter.getY();
+        float cz = geometricCenter.getZ();
+
+        float[] minB = { cx - width * 0.5f, cy - height * 0.5f, cz - depth * 0.5f };
+        float[] maxB = { cx + width * 0.5f, cy + height * 0.5f, cz + depth * 0.5f };
+        float[] orig = { localA.getX(), localA.getY(), localA.getZ() };
+        float[] dir  = { dVec.getX(), dVec.getY(), dVec.getZ() };
+
+        float tMin = 0.0f;
+        float tMax = 1.0f;
+
+        for (int i = 0; i < 3; i++) {
+            if (Math.abs(dir[i]) < 1e-6f) {
+                if (orig[i] < minB[i] || orig[i] > maxB[i]) return null;
+            } else {
+                float invD = 1.0f / dir[i];
+                float t1 = (minB[i] - orig[i]) * invD;
+                float t2 = (maxB[i] - orig[i]) * invD;
+                if (t1 > t2) {
+                    float tmp = t1;
+                    t1 = t2;
+                    t2 = tmp;
+                }
+                tMin = Math.max(tMin, t1);
+                tMax = Math.min(tMax, t2);
+                if (tMin > tMax) return null;
+            }
+        }
+
+        Point3D localHit = localA.add(dVec.mult(tMin));
+        return transform.transform(localHit);
+    }
+
+    @Override
+    void draw() {
+        updateTransformMatrix();
+        pushMatrix();
+        applyMatrix(getRotationMatrix().toPMatrix3D());
+        translate(geometricCenter.getX(), geometricCenter.getY(), geometricCenter.getZ());
+        fill(100, 255, 160, 200);
+        stroke(255);
+        box(width, height, depth);
+        popMatrix();
+
+        super.draw();
+    }
+}
+
+// ==========================================
+// cylenderBody (Aligned along local Y-axis)
+// ==========================================
+class cylenderBody extends GeometricBody {
+    // Cylinder dimensions as floats
+    float radius;
+    float height;
+
+    // Weight ratios (default to surface-area proportional when negative) and distributed masses
+    float topWeight = -1.0f, bottomWeight = -1.0f, lateralWeight = -1.0f;
+    float topCapMass, bottomCapMass, lateralMass;
+
+    // Uniform surface-density constructor
+    public cylenderBody(Point3D position, Quaternion orientation, float totalMass,
+                        float radius, float height) {
+        super(position, orientation, totalMass);
+        this.radius = radius;
+        this.height = height;
+        massDistribution();
+        computeGravityCenter();
+    }
+
+    // Uneven mass constructor with weight ratios for top cap, bottom cap, and lateral wall
+    public cylenderBody(Point3D position, Quaternion orientation, float totalMass,
+                        float radius, float height,
+                        float topWeight, float bottomWeight, float lateralWeight) {
+        super(position, orientation, totalMass);
+        this.radius = radius;
+        this.height = height;
+        massDistribution(topWeight, bottomWeight, lateralWeight);
+        computeGravityCenter();
+    }
+
+    void massDistribution(float topWeight, float bottomWeight, float lateralWeight) {
+        this.topWeight = Math.max(0.0f, topWeight);
+        this.bottomWeight = Math.max(0.0f, bottomWeight);
+        this.lateralWeight = Math.max(0.0f, lateralWeight);
+        massDistribution();
+    }
+
+    @Override
+    void massDistribution() {
+        float totalMass = (gravityCenter != null) ? gravityCenter.getMass() : 0.0f;
+
+        if (topWeight >= 0.0f && bottomWeight >= 0.0f && lateralWeight >= 0.0f) {
+            float weightSum = topWeight + bottomWeight + lateralWeight;
+            if (weightSum > 0.0f) {
+                topCapMass = totalMass * (topWeight / weightSum);
+                bottomCapMass = totalMass * (bottomWeight / weightSum);
+                lateralMass = totalMass * (lateralWeight / weightSum);
+                return;
+            }
+        }
+
+        // Default uniform area distribution
+        float capArea = (float)Math.PI * radius * radius;
+        float sideArea = 2.0f * (float)Math.PI * radius * height;
+        float totalArea = 2.0f * capArea + sideArea;
+
+        if (totalArea > 0.0f) {
+            topCapMass = totalMass * (capArea / totalArea);
+            bottomCapMass = totalMass * (capArea / totalArea);
+            lateralMass = totalMass * (sideArea / totalArea);
+        } else {
+            topCapMass = bottomCapMass = lateralMass = totalMass / 3.0f;
+        }
+    }
+
+    @Override
+    void computeGravityCenter() {
+        float totalMass = topCapMass + bottomCapMass + lateralMass;
+        float halfH = height * 0.5f;
+        float gy = 0.0f;
+
+        if (totalMass > 0.0f) {
+            // Top cap is at +halfH, bottom cap at -halfH, lateral wall centered at 0
+            gy = (topCapMass * halfH + bottomCapMass * (-halfH) + lateralMass * 0.0f) / totalMass;
+        }
+
+        // Geometric center relative to the center of gravity at (0,0,0)
+        geometricCenter = new Point3D(0.0f, -gy, 0.0f);
+        updateTransformMatrix();
+    }
+
+    // Ray-segment vs. finite Y-aligned cylinder intersection in local space
+    @Override
+    Point3D interceptLine(Point3D a, Point3D b) {
+        updateTransformMatrix();
+        Matrix4 transform = getRotationMatrix();
+        Point3D localA = transform.transformInverse(a);
+        Point3D localB = transform.transformInverse(b);
+        Vector3D dir = localB.sub(localA);
+
+        float cy = geometricCenter.getY();
+        float ox = localA.getX(), oy = localA.getY() - cy, oz = localA.getZ();
+        float dx = dir.getX(), dy = dir.getY(), dz = dir.getZ();
+        float halfH = height * 0.5f;
+
+        float bestT = Float.MAX_VALUE;
+        boolean hit = false;
+
+        // 1. Infinite cylinder side: x^2 + z^2 = r^2
+        float A = dx * dx + dz * dz;
+        float B = 2.0f * (ox * dx + oz * dz);
+        float C = ox * ox + oz * oz - radius * radius;
+
+        if (A > 1e-6f) {
+            float disc = B * B - 4.0f * A * C;
+            if (disc >= 0.0f) {
+                float sqrtDisc = (float)Math.sqrt(disc);
+                float[] ts = { (-B - sqrtDisc) / (2.0f * A), (-B + sqrtDisc) / (2.0f * A) };
+                for (float t : ts) {
+                    if (t >= 0.0f && t <= 1.0f) {
+                        float y = oy + t * dy;
+                        if (y >= -halfH && y <= halfH && t < bestT) {
+                            bestT = t;
+                            hit = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Top and bottom caps: y = +/- halfH
+        if (Math.abs(dy) > 1e-6f) {
+            float[] capYs = { halfH, -halfH };
+            for (float capY : capYs) {
+                float t = (capY - oy) / dy;
+                if (t >= 0.0f && t <= 1.0f && t < bestT) {
+                    float x = ox + t * dx;
+                    float z = oz + t * dz;
+                    if (x * x + z * z <= radius * radius) {
+                        bestT = t;
+                        hit = true;
+                    }
+                }
+            }
+        }
+
+        if (!hit) return null;
+
+        Point3D localHit = localA.add(dir.mult(bestT));
+        return transform.transform(localHit);
+    }
+
+    @Override
+    void draw() {
+        updateTransformMatrix();
+        pushMatrix();
+        applyMatrix(getRotationMatrix().toPMatrix3D());
+        translate(geometricCenter.getX(), geometricCenter.getY(), geometricCenter.getZ());
+        fill(255, 190, 90, 200);
+        stroke(255);
+
+        int detail = 24;
+        float halfH = height * 0.5f;
+
+        // Lateral surface
+        beginShape(QUAD_STRIP);
+        for (int i = 0; i <= detail; i++) {
+            float angle = TWO_PI * i / detail;
+            float x = cos(angle) * radius;
+            float z = sin(angle) * radius;
+            vertex(x, -halfH, z);
+            vertex(x,  halfH, z);
+        }
+        endShape();
+
+        // Top cap
+        beginShape(TRIANGLE_FAN);
+        vertex(0, halfH, 0);
+        for (int i = 0; i <= detail; i++) {
+            float angle = TWO_PI * i / detail;
+            vertex(cos(angle) * radius, halfH, sin(angle) * radius);
+        }
+        endShape();
+
+        // Bottom cap
+        beginShape(TRIANGLE_FAN);
+        vertex(0, -halfH, 0);
+        for (int i = 0; i <= detail; i++) {
+            float angle = TWO_PI * i / detail;
+            vertex(cos(angle) * radius, -halfH, sin(angle) * radius);
+        }
+        endShape();
+
+        popMatrix();
+
+        super.draw();
+    }
+}
+
+// ==========================================
+// GraphBody & Complex Pattern Enum
+// ==========================================
+enum GraphShapePattern {
+    TORUS,
+    HELIX,
+    STARBURST,
+    TREFOIL_KNOT,
+    DUMBBELL,
+    CLUSTER
+}
+
+class GraphNode {
+    Point3D localPos;
+    float weight;
+    ArrayList<GraphNode> neighbors;
+
+    GraphNode(Point3D localPos, float weight) {
+        this.localPos = localPos;
+        this.weight = weight;
+        this.neighbors = new ArrayList<GraphNode>();
+    }
+}
+
+class GraphBody extends RigidBody {
+    ArrayList<GraphNode> nodes;
+    int nodeCount;
+    GraphShapePattern shapePattern;
+    float shapeRadius = 7.0f;
+    float jitterRatio = 0.15f;
+    float nodeHitRadius = 1.2f;
+    Vector3D weightSkew = new Vector3D(0.0f, 0.0f, 0.0f);
+
+    // Default constructor: 16 nodes in a semi-random Torus with even weight
+    public GraphBody(Point3D position, Quaternion orientation, float totalMass) {
+        this(position, orientation, totalMass, 16, GraphShapePattern.TORUS, 7.0f, 0.15f, new Vector3D());
+    }
+
+    // Parameterized constructor with node count n and pattern enum
+    public GraphBody(Point3D position, Quaternion orientation, float totalMass,
+                     int n, GraphShapePattern pattern) {
+        this(position, orientation, totalMass, n, pattern, 7.0f, 0.15f, new Vector3D());
+    }
+
+    // Parameterized constructor with node count n, pattern enum, and weight skew vector
+    public GraphBody(Point3D position, Quaternion orientation, float totalMass,
+                     int n, GraphShapePattern pattern, Vector3D weightSkew) {
+        this(position, orientation, totalMass, n, pattern, 7.0f, 0.15f, weightSkew);
+    }
+
+    // Full constructor with size, randomness, and directional weight skew control
+    public GraphBody(Point3D position, Quaternion orientation, float totalMass,
+                     int n, GraphShapePattern pattern, float shapeRadius,
+                     float jitterRatio, Vector3D weightSkew) {
+        super(position, orientation, totalMass);
+        this.nodes = new ArrayList<GraphNode>();
+        this.nodeCount = Math.max(2, n);
+        this.shapePattern = (pattern != null) ? pattern : GraphShapePattern.TORUS;
+        this.shapeRadius = shapeRadius;
+        this.jitterRatio = Math.max(0.0f, jitterRatio);
+        this.weightSkew = (weightSkew != null) ? weightSkew : new Vector3D();
+
+        generateShape();
+        distributeWeights(this.weightSkew);
+        computeGravityCenter();
+    }
+
+    // Regenerate shape and apply skew at runtime
+    void generateShape(int n, GraphShapePattern pattern, Vector3D skew) {
+        this.nodeCount = Math.max(2, n);
+        this.shapePattern = (pattern != null) ? pattern : GraphShapePattern.TORUS;
+        this.weightSkew = (skew != null) ? skew : new Vector3D();
+        generateShape();
+        distributeWeights(this.weightSkew);
+        computeGravityCenter();
+    }
+
+    // Builds the graph with n semi-randomly distributed nodes according to shapePattern
+    void generateShape() {
+        nodes.clear();
+        float jitter = shapeRadius * jitterRatio;
+        float goldenAngle = (float)(Math.PI * (3.0 - Math.sqrt(5.0)));
+
+        for (int i = 0; i < nodeCount; i++) {
+            float t = (nodeCount > 1) ? (float)i / (nodeCount - 1) : 0.5f;
+            float jx = random(-jitter, jitter);
+            float jy = random(-jitter, jitter);
+            float jz = random(-jitter, jitter);
+            Point3D pos;
+
+            switch (shapePattern) {
+                case TORUS: {
+                    // Major ring R + minor tube r with semi-random jitter
+                    float majorR = shapeRadius;
+                    float minorR = shapeRadius * 0.35f;
+                    float u = (TWO_PI * i) / nodeCount + random(-0.15f, 0.15f);
+                    float v = goldenAngle * i * 2.0f + random(-0.3f, 0.3f);
+                    float r = majorR + minorR * (float)Math.cos(v);
+                    pos = new Point3D(
+                        r * (float)Math.cos(u) + jx * 0.5f,
+                        minorR * (float)Math.sin(v) + jy * 0.5f,
+                        r * (float)Math.sin(u) + jz * 0.5f
+                    );
+                    break;
+                }
+
+                case HELIX: {
+                    // 3D spiral coil with 2.5 turns and radial jitter
+                    float turns = 2.5f;
+                    float angle = t * turns * TWO_PI + random(-0.15f, 0.15f);
+                    float y = (t - 0.5f) * (shapeRadius * 2.2f) + jy * 0.5f;
+                    float r = shapeRadius * 0.65f + random(-jitter, jitter);
+                    pos = new Point3D(
+                        r * (float)Math.cos(angle),
+                        y,
+                        r * (float)Math.sin(angle)
+                    );
+                    break;
+                }
+
+                case STARBURST: {
+                    // Central core + spiky arms radiating outward in 3D
+                    int numArms = Math.max(4, Math.min(8, nodeCount / 3));
+                    int armIdx = i % numArms;
+                    float armProgress = (float)(i / numArms) / Math.max(1, (nodeCount / numArms));
+                    float yDir = 1.0f - 2.0f * ((armIdx + 0.5f) / numArms);
+                    float rAtY = (float)Math.sqrt(Math.max(0.0f, 1.0f - yDir * yDir));
+                    float theta = goldenAngle * armIdx;
+                    float dist = shapeRadius * (0.2f + 0.9f * armProgress);
+                    pos = new Point3D(
+                        (float)Math.cos(theta) * rAtY * dist + jx * 0.4f,
+                        yDir * dist + jy * 0.4f,
+                        (float)Math.sin(theta) * rAtY * dist + jz * 0.4f
+                    );
+                    break;
+                }
+
+                case TREFOIL_KNOT: {
+                    // Parametric 3D trefoil knot scaled to shapeRadius
+                    float phi = (TWO_PI * i) / nodeCount + random(-0.1f, 0.1f);
+                    float scale = shapeRadius * 0.35f;
+                    float x = (float)(Math.sin(phi) + 2.0 * Math.sin(2.0 * phi)) * scale + jx * 0.4f;
+                    float y = (float)(Math.cos(phi) - 2.0 * Math.cos(2.0 * phi)) * scale + jy * 0.4f;
+                    float z = (float)(-Math.sin(3.0 * phi)) * scale + jz * 0.4f;
+                    pos = new Point3D(x, y, z);
+                    break;
+                }
+
+                case DUMBBELL: {
+                    // Two heavy end-lobes connected by a thin central bridge
+                    float bridgeFraction = 0.25f;
+                    if (t < bridgeFraction) {
+                        // Central bridge along X-axis
+                        float bt = (t / bridgeFraction) * 2.0f - 1.0f;
+                        pos = new Point3D(
+                            bt * shapeRadius * 0.7f,
+                            jy * 0.35f,
+                            jz * 0.35f
+                        );
+                    } else {
+                        // Left (-X) or Right (+X) spherical lobe
+                        float side = (i % 2 == 0) ? 1.0f : -1.0f;
+                        float lobeR = shapeRadius * 0.45f;
+                        float u = random(-1.0f, 1.0f);
+                        float theta = random(0.0f, TWO_PI);
+                        float s = (float)Math.sqrt(Math.max(0.0f, 1.0f - u * u));
+                        float r = lobeR * (0.5f + 0.5f * random(0.0f, 1.0f));
+                        pos = new Point3D(
+                            side * shapeRadius * 0.85f + r * s * (float)Math.cos(theta),
+                            r * u,
+                            r * s * (float)Math.sin(theta)
+                        );
+                    }
+                    break;
+                }
+
+                case CLUSTER:
+                default: {
+                    // Organic 3D cluster concentrated near the center
+                    float r = shapeRadius * (float)Math.pow(random(0.0f, 1.0f), 0.6f);
+                    float u = random(-1.0f, 1.0f);
+                    float theta = random(0.0f, TWO_PI);
+                    float s = (float)Math.sqrt(Math.max(0.0f, 1.0f - u * u));
+                    pos = new Point3D(
+                        r * s * (float)Math.cos(theta),
+                        r * u,
+                        r * s * (float)Math.sin(theta)
+                    );
+                    break;
+                }
+            }
+
+            nodes.add(new GraphNode(pos, 1.0f));
+        }
+
+        // Connect each node to its k nearest neighbors to form a cohesive 3D wireframe
+        int kNeighbors = Math.min(3, nodeCount - 1);
+        for (int i = 0; i < nodeCount; i++) {
+            GraphNode current = nodes.get(i);
+            boolean[] chosen = new boolean[nodeCount];
+            chosen[i] = true;
+
+            for (int k = 0; k < kNeighbors; k++) {
+                int bestIdx = -1;
+                float bestDistSq = Float.MAX_VALUE;
+                for (int j = 0; j < nodeCount; j++) {
+                    if (chosen[j]) continue;
+                    float dSq = current.localPos.distanceSquaredTo(nodes.get(j).localPos);
+                    if (dSq < bestDistSq) {
+                        bestDistSq = dSq;
+                        bestIdx = j;
+                    }
+                }
+                if (bestIdx != -1) {
+                    chosen[bestIdx] = true;
+                    connectNodes(current, nodes.get(bestIdx));
+                }
+            }
+        }
+    }
+
+    void connectNodes(GraphNode a, GraphNode b) {
+        if (!a.neighbors.contains(b)) a.neighbors.add(b);
+        if (!b.neighbors.contains(a)) b.neighbors.add(a);
+    }
+
+    // Distributes total weight using the stored weightSkew vector (even when weightSkew is (0,0,0))
+    void distributeWeights() {
+        distributeWeights(this.weightSkew);
+    }
+
+    // Skews weight distribution along a 3D direction vector.
+    // Higher skew magnitude creates a steeper mass gradient across the shape.
+    void distributeWeights(Vector3D skew) {
+        if (nodes.isEmpty()) return;
+        this.weightSkew = (skew != null) ? skew : new Vector3D();
+        float totalMass = (gravityCenter != null) ? gravityCenter.getMass() : 0.0f;
+
+        if (this.weightSkew.lengthSquared() < 1e-6f) {
+            float weightPerNode = totalMass / nodes.size();
+            for (GraphNode node : nodes) {
+                node.weight = weightPerNode;
+            }
+            return;
+        }
+
+        // Compute normalized projection along skew direction for each node
+        float[] rawWeights = new float[nodes.size()];
+        float weightSum = 0.0f;
+        float invScale = 1.0f / Math.max(1.0f, shapeRadius);
+
+        for (int i = 0; i < nodes.size(); i++) {
+            Point3D p = nodes.get(i).localPos;
+            Vector3D posVec = new Vector3D(p.getX(), p.getY(), p.getZ());
+            float projection = posVec.dot(this.weightSkew) * invScale;
+            // Exponential weighting guarantees strictly positive weights and smooth skewing
+            float w = (float)Math.exp(projection);
+            rawWeights[i] = w;
+            weightSum += w;
+        }
+
+        for (int i = 0; i < nodes.size(); i++) {
+            nodes.get(i).weight = totalMass * (rawWeights[i] / weightSum);
+        }
+    }
+
+    // Distributes total weight using explicit per-node weight ratios
+    void distributeWeights(float[] nodeWeightRatios) {
+        if (nodes.isEmpty() || nodeWeightRatios == null || nodeWeightRatios.length != nodes.size()) {
+            distributeWeights();
+            return;
+        }
+        float totalMass = (gravityCenter != null) ? gravityCenter.getMass() : 0.0f;
+        float ratioSum = 0.0f;
+        for (float r : nodeWeightRatios) ratioSum += Math.max(0.0f, r);
+
+        if (ratioSum > 0.0f) {
+            for (int i = 0; i < nodes.size(); i++) {
+                nodes.get(i).weight = totalMass * (Math.max(0.0f, nodeWeightRatios[i]) / ratioSum);
+            }
+        } else {
+            distributeWeights();
+        }
+    }
+
+    @Override
+    void computeGravityCenter() {
+        if (nodes.isEmpty()) {
+            updateTransformMatrix();
+            return;
+        }
+
+        float totalWeight = 0.0f;
+        float wx = 0.0f, wy = 0.0f, wz = 0.0f;
+
+        for (GraphNode node : nodes) {
+            totalWeight += node.weight;
+            wx += node.localPos.getX() * node.weight;
+            wy += node.localPos.getY() * node.weight;
+            wz += node.localPos.getZ() * node.weight;
+        }
+
+        if (totalWeight > 0.0f) {
+            Vector3D offset = new Vector3D(wx / totalWeight, wy / totalWeight, wz / totalWeight);
+
+            // Recenter local node positions around the computed center of gravity
+            for (GraphNode node : nodes) {
+                node.localPos = node.localPos.sub(offset);
+            }
+        }
+        updateTransformMatrix();
+    }
+
+    // Checks line segment intersection against spheres around each graph node
+    @Override
+    Point3D interceptLine(Point3D a, Point3D b) {
+        updateTransformMatrix();
+        Matrix4 transform = getRotationMatrix();
+        Point3D localA = transform.transformInverse(a);
+        Point3D localB = transform.transformInverse(b);
+
+        Vector3D dir = localB.sub(localA);
+        float lenSq = dir.lengthSquared();
+        if (lenSq < 1e-6f) return null;
+
+        float bestT = Float.MAX_VALUE;
+        boolean hit = false;
+
+        for (GraphNode node : nodes) {
+            Vector3D m = localA.sub(node.localPos);
+            float bCoef = m.dot(dir);
+            float cCoef = m.lengthSquared() - nodeHitRadius * nodeHitRadius;
+
+            if (cCoef > 0.0f && bCoef > 0.0f) continue;
+
+            float disc = bCoef * bCoef - lenSq * cCoef;
+            if (disc < 0.0f) continue;
+
+            float t = (-bCoef - (float)Math.sqrt(disc)) / lenSq;
+            if (t < 0.0f) t = 0.0f;
+            if (t <= 1.0f && t < bestT) {
+                bestT = t;
+                hit = true;
+            }
+        }
+
+        if (!hit) return null;
+
+        Point3D localHit = localA.add(dir.mult(bestT));
+        return transform.transform(localHit);
+    }
+
+    @Override
+    void draw() {
+        updateTransformMatrix();
+        pushMatrix();
+        applyMatrix(getRotationMatrix().toPMatrix3D());
+
+        // Draw graph edges
+        stroke(180, 220, 255);
+        strokeWeight(2);
+        for (GraphNode node : nodes) {
+            for (GraphNode neighbor : node.neighbors) {
+                line(node.localPos.getX(), node.localPos.getY(), node.localPos.getZ(),
+                     neighbor.localPos.getX(), neighbor.localPos.getY(), neighbor.localPos.getZ());
+            }
+        }
+
+        // Draw graph vertices scaled by relative node weight
+        float avgWeight = (gravityCenter != null && !nodes.isEmpty())
+            ? (gravityCenter.getMass() / nodes.size()) : 1.0f;
+
+        noStroke();
+        fill(120, 200, 255);
+        for (GraphNode node : nodes) {
+            float weightRatio = (avgWeight > 0.0f) ? (node.weight / avgWeight) : 1.0f;
+            float visualRadius = nodeHitRadius * 0.45f * constrain((float)Math.sqrt(weightRatio), 0.5f, 2.2f);
+            pushMatrix();
+            translate(node.localPos.getX(), node.localPos.getY(), node.localPos.getZ());
+            sphere(visualRadius);
+            popMatrix();
+        }
+
+        popMatrix();
+
+        super.draw();
+    }
+}
