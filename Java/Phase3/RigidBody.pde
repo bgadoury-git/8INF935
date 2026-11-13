@@ -67,8 +67,25 @@ class RigidBody {
         RotationMatrix.setOrientationAndPosition(q, pos);
     }
 
+    // Maps a %TotalWeight ratio (relative to uniform share) to a Blue -> Green -> Red gradient
+    int weightPercentToColor(float massSharePct, float uniformSharePct, int alpha) {
+        int cLow  = color(45, 135, 255, alpha);   // Low %TotalWeight (Blue)
+        int cMid  = color(60, 225, 130, alpha);   // Average %TotalWeight (Green)
+        int cHigh = color(255, 65, 50, alpha);    // High %TotalWeight (Red-Orange)
+
+        if (uniformSharePct <= 1e-6f) return cMid;
+        float ratio = massSharePct / uniformSharePct;
+
+        if (ratio <= 1.0f) {
+            float t = constrain(ratio, 0.0f, 1.0f);
+            return lerpColor(cLow, cMid, t);
+        } else {
+            float t = constrain((ratio - 1.0f) / 1.5f, 0.0f, 1.0f);
+            return lerpColor(cMid, cHigh, t);
+        }
+    }
+
     // --- Virtual Functions ---
-    // Returns the intersection point in world coordinates, or null if no intersection occurs
     Point3D interceptLine(Point3D a, Point3D b) {
         return null;
     }
@@ -80,7 +97,39 @@ class RigidBody {
     void draw() {
         if (gravityCenter != null) {
             gravityCenter.draw();
+            drawCenterOfMassBeacon();
         }
+    }
+
+    // High-visibility Center of Mass indicator visible through translucent geometry
+    void drawCenterOfMassBeacon() {
+        Point3D pos = gravityCenter.getPosition();
+        hint(DISABLE_DEPTH_TEST);
+        pushMatrix();
+        translate(pos.getX(), pos.getY(), pos.getZ());
+
+        // Bright core sphere
+        noStroke();
+        fill(255, 235, 40);
+        sphereDetail(16);
+        sphere(5.5f);
+
+        // High-contrast 3D crosshair axes
+        strokeWeight(2.5f);
+        float arm = 14.0f;
+        stroke(255, 50, 220);
+        line(-arm, 0, 0, arm, 0, 0);
+        line(0, -arm, 0, 0, arm, 0);
+        line(0, 0, -arm, 0, 0, arm);
+
+        // Outer halo ring
+        noFill();
+        stroke(255, 235, 40, 210);
+        strokeWeight(1.5f);
+        ellipse(0, 0, 22.0f, 22.0f);
+
+        popMatrix();
+        hint(ENABLE_DEPTH_TEST);
     }
 }
 
@@ -108,7 +157,6 @@ class GeometricBody extends RigidBody {
         this.geometricCenter = geometricCenter;
     }
 
-    // Distributes the total weight of gravityCenter across the geometry
     void massDistribution() {}
 }
 
@@ -116,16 +164,13 @@ class GeometricBody extends RigidBody {
 // TriangleBody
 // ==========================================
 class TriangleBody extends GeometricBody {
-    // Triangle vertices in local space (relative to center of gravity)
     float x1, y1, z1;
     float x2, y2, z2;
     float x3, y3, z3;
 
-    // Weight ratios and distributed vertex masses
     float w1 = 1.0f, w2 = 1.0f, w3 = 1.0f;
     float m1, m2, m3;
 
-    // Uniform mass constructor
     public TriangleBody(Point3D position, Quaternion orientation, float totalMass,
                         float x1, float y1, float z1,
                         float x2, float y2, float z2,
@@ -133,7 +178,6 @@ class TriangleBody extends GeometricBody {
         this(position, orientation, totalMass, x1, y1, z1, x2, y2, z2, x3, y3, z3, 1.0f, 1.0f, 1.0f);
     }
 
-    // Uneven mass constructor with per-vertex weight ratios (w1, w2, w3)
     public TriangleBody(Point3D position, Quaternion orientation, float totalMass,
                         float x1, float y1, float z1,
                         float x2, float y2, float z2,
@@ -170,19 +214,16 @@ class TriangleBody extends GeometricBody {
 
     @Override
     void computeGravityCenter() {
-        // Unweighted geometric centroid
         float cx = (x1 + x2 + x3) / 3.0f;
         float cy = (y1 + y2 + y3) / 3.0f;
         float cz = (z1 + z2 + z3) / 3.0f;
 
-        // Weighted center of mass
         float totalMass = m1 + m2 + m3;
         if (totalMass > 0.0f) {
             float gx = (m1 * x1 + m2 * x2 + m3 * x3) / totalMass;
             float gy = (m1 * y1 + m2 * y2 + m3 * y3) / totalMass;
             float gz = (m1 * z1 + m2 * z2 + m3 * z3) / totalMass;
 
-            // Recenter local vertices around the center of gravity (0,0,0)
             x1 -= gx; y1 -= gy; z1 -= gz;
             x2 -= gx; y2 -= gy; z2 -= gz;
             x3 -= gx; y3 -= gy; z3 -= gz;
@@ -193,7 +234,6 @@ class TriangleBody extends GeometricBody {
         updateTransformMatrix();
     }
 
-    // Möller–Trumbore ray-segment / triangle intersection in local space
     @Override
     Point3D interceptLine(Point3D a, Point3D b) {
         updateTransformMatrix();
@@ -235,14 +275,22 @@ class TriangleBody extends GeometricBody {
     @Override
     void draw() {
         updateTransformMatrix();
+        float totalMass = (gravityCenter != null && gravityCenter.getMass() > 0.0f)
+            ? gravityCenter.getMass() : 1.0f;
+        float uniformPct = 1.0f / 3.0f;
+
+        int c1 = weightPercentToColor(m1 / totalMass, uniformPct, 210);
+        int c2 = weightPercentToColor(m2 / totalMass, uniformPct, 210);
+        int c3 = weightPercentToColor(m3 / totalMass, uniformPct, 210);
+
         pushMatrix();
         applyMatrix(getRotationMatrix().toPMatrix3D());
-        fill(100, 180, 255, 200);
-        stroke(255);
+        stroke(255, 220);
+        strokeWeight(1.5f);
         beginShape(TRIANGLES);
-        vertex(x1, y1, z1);
-        vertex(x2, y2, z2);
-        vertex(x3, y3, z3);
+        fill(c1); vertex(x1, y1, z1);
+        fill(c2); vertex(x2, y2, z2);
+        fill(c3); vertex(x3, y3, z3);
         endShape();
         popMatrix();
 
@@ -254,19 +302,14 @@ class TriangleBody extends GeometricBody {
 // SquareBody (Rectangular Prism / Box)
 // ==========================================
 class SquareBody extends GeometricBody {
-    // Box dimensions as floats
     float width, height, depth;
-
-    // 8 corner weight ratios and distributed masses
     float[] cornerWeights = { 1, 1, 1, 1, 1, 1, 1, 1 };
     float[] cornerMasses = new float[8];
 
-    // Uniform cube constructor
     public SquareBody(Point3D position, Quaternion orientation, float totalMass, float size) {
         this(position, orientation, totalMass, size, size, size);
     }
 
-    // Uniform box constructor
     public SquareBody(Point3D position, Quaternion orientation, float totalMass,
                       float width, float height, float depth) {
         super(position, orientation, totalMass);
@@ -277,7 +320,6 @@ class SquareBody extends GeometricBody {
         computeGravityCenter();
     }
 
-    // Uneven mass constructor using a directional bias vector
     public SquareBody(Point3D position, Quaternion orientation, float totalMass,
                       float width, float height, float depth, Vector3D massBias) {
         super(position, orientation, totalMass);
@@ -288,7 +330,6 @@ class SquareBody extends GeometricBody {
         computeGravityCenter();
     }
 
-    // Uneven mass constructor using explicit 8-corner weight ratios
     public SquareBody(Point3D position, Quaternion orientation, float totalMass,
                       float width, float height, float depth, float[] cornerWeights) {
         super(position, orientation, totalMass);
@@ -299,7 +340,6 @@ class SquareBody extends GeometricBody {
         computeGravityCenter();
     }
 
-    // Sets weights from a directional bias vector
     void massDistribution(Vector3D bias) {
         float bx = (bias != null) ? bias.getX() : 0.0f;
         float by = (bias != null) ? bias.getY() : 0.0f;
@@ -314,7 +354,6 @@ class SquareBody extends GeometricBody {
         massDistribution();
     }
 
-    // Sets weights directly from an 8-element array
     void massDistribution(float[] weights) {
         if (weights != null && weights.length == 8) {
             for (int i = 0; i < 8; i++) {
@@ -362,12 +401,10 @@ class SquareBody extends GeometricBody {
             gy /= totalMass;
             gz /= totalMass;
         }
-        // Geometric center relative to the center of gravity at (0,0,0)
         geometricCenter = new Point3D(-gx, -gy, -gz);
         updateTransformMatrix();
     }
 
-    // Slab method for line segment vs. local AABB intersection
     @Override
     Point3D interceptLine(Point3D a, Point3D b) {
         updateTransformMatrix();
@@ -413,14 +450,46 @@ class SquareBody extends GeometricBody {
     @Override
     void draw() {
         updateTransformMatrix();
+        float totalMass = (gravityCenter != null && gravityCenter.getMass() > 0.0f)
+            ? gravityCenter.getMass() : 1.0f;
+        float uniformPct = 1.0f / 8.0f;
+
+        float hx = width * 0.5f, hy = height * 0.5f, hz = depth * 0.5f;
+        float[][] corners = new float[8][3];
+        int[] cornerColors = new int[8];
+
+        for (int i = 0; i < 8; i++) {
+            corners[i][0] = ((i & 1) == 0) ? -hx : hx;
+            corners[i][1] = ((i & 2) == 0) ? -hy : hy;
+            corners[i][2] = ((i & 4) == 0) ? -hz : hz;
+            cornerColors[i] = weightPercentToColor(cornerMasses[i] / totalMass, uniformPct, 195);
+        }
+
+        int[][] quads = {
+            {0, 1, 3, 2}, // -Z face
+            {4, 5, 7, 6}, // +Z face
+            {0, 2, 6, 4}, // -X face
+            {1, 3, 7, 5}, // +X face
+            {0, 1, 5, 4}, // -Y face
+            {2, 3, 7, 6}  // +Y face
+        };
+
         pushMatrix();
         applyMatrix(getRotationMatrix().toPMatrix3D());
         translate(geometricCenter.getX(), geometricCenter.getY(), geometricCenter.getZ());
-        fill(100, 255, 160, 200);
-        stroke(255);
-        box(width, height, depth);
-        popMatrix();
 
+        stroke(255, 210);
+        strokeWeight(1.4f);
+        beginShape(QUADS);
+        for (int[] q : quads) {
+            for (int idx : q) {
+                fill(cornerColors[idx]);
+                vertex(corners[idx][0], corners[idx][1], corners[idx][2]);
+            }
+        }
+        endShape();
+
+        popMatrix();
         super.draw();
     }
 }
@@ -429,15 +498,12 @@ class SquareBody extends GeometricBody {
 // cylenderBody (Aligned along local Y-axis)
 // ==========================================
 class cylenderBody extends GeometricBody {
-    // Cylinder dimensions as floats
     float radius;
     float height;
 
-    // Weight ratios (default to surface-area proportional when negative) and distributed masses
     float topWeight = -1.0f, bottomWeight = -1.0f, lateralWeight = -1.0f;
     float topCapMass, bottomCapMass, lateralMass;
 
-    // Uniform surface-density constructor
     public cylenderBody(Point3D position, Quaternion orientation, float totalMass,
                         float radius, float height) {
         super(position, orientation, totalMass);
@@ -447,7 +513,6 @@ class cylenderBody extends GeometricBody {
         computeGravityCenter();
     }
 
-    // Uneven mass constructor with weight ratios for top cap, bottom cap, and lateral wall
     public cylenderBody(Point3D position, Quaternion orientation, float totalMass,
                         float radius, float height,
                         float topWeight, float bottomWeight, float lateralWeight) {
@@ -479,7 +544,6 @@ class cylenderBody extends GeometricBody {
             }
         }
 
-        // Default uniform area distribution
         float capArea = (float)Math.PI * radius * radius;
         float sideArea = 2.0f * (float)Math.PI * radius * height;
         float totalArea = 2.0f * capArea + sideArea;
@@ -503,12 +567,10 @@ class cylenderBody extends GeometricBody {
             gy = (topCapMass * halfH + bottomCapMass * (-halfH) + lateralMass * 0.0f) / totalMass;
         }
 
-        // Geometric center relative to the center of gravity at (0,0,0)
         geometricCenter = new Point3D(0.0f, -gy, 0.0f);
         updateTransformMatrix();
     }
 
-    // Ray-segment vs. finite Y-aligned cylinder intersection in local space
     @Override
     Point3D interceptLine(Point3D a, Point3D b) {
         updateTransformMatrix();
@@ -525,7 +587,6 @@ class cylenderBody extends GeometricBody {
         float bestT = Float.MAX_VALUE;
         boolean hit = false;
 
-        // 1. Infinite cylinder side: x^2 + z^2 = r^2
         float A = dx * dx + dz * dz;
         float B = 2.0f * (ox * dx + oz * dz);
         float C = ox * ox + oz * oz - radius * radius;
@@ -547,7 +608,6 @@ class cylenderBody extends GeometricBody {
             }
         }
 
-        // 2. Top and bottom caps: y = +/- halfH
         if (Math.abs(dy) > 1e-6f) {
             float[] capYs = { halfH, -halfH };
             for (float capY : capYs) {
@@ -572,27 +632,38 @@ class cylenderBody extends GeometricBody {
     @Override
     void draw() {
         updateTransformMatrix();
+        float totalMass = (gravityCenter != null && gravityCenter.getMass() > 0.0f)
+            ? gravityCenter.getMass() : 1.0f;
+        float uniformPct = 1.0f / 3.0f;
+
+        int cTop  = weightPercentToColor(topCapMass / totalMass, uniformPct, 205);
+        int cBot  = weightPercentToColor(bottomCapMass / totalMass, uniformPct, 205);
+        int cSide = weightPercentToColor(lateralMass / totalMass, uniformPct, 205);
+
         pushMatrix();
         applyMatrix(getRotationMatrix().toPMatrix3D());
         translate(geometricCenter.getX(), geometricCenter.getY(), geometricCenter.getZ());
-        fill(255, 190, 90, 200);
-        stroke(255);
+        stroke(255, 200);
+        strokeWeight(1.2f);
 
         int detail = 24;
         float halfH = height * 0.5f;
 
-        // Lateral surface
+        // Lateral surface with vertical %TotalWeight gradient between bottom, mid, and top
         beginShape(QUAD_STRIP);
         for (int i = 0; i <= detail; i++) {
             float angle = TWO_PI * i / detail;
             float x = cos(angle) * radius;
             float z = sin(angle) * radius;
+            fill(lerpColor(cBot, cSide, 0.5f));
             vertex(x, -halfH, z);
+            fill(lerpColor(cTop, cSide, 0.5f));
             vertex(x,  halfH, z);
         }
         endShape();
 
-        // Top cap
+        // Top cap (+Y)
+        fill(cTop);
         beginShape(TRIANGLE_FAN);
         vertex(0, halfH, 0);
         for (int i = 0; i <= detail; i++) {
@@ -601,7 +672,8 @@ class cylenderBody extends GeometricBody {
         }
         endShape();
 
-        // Bottom cap
+        // Bottom cap (-Y)
+        fill(cBot);
         beginShape(TRIANGLE_FAN);
         vertex(0, -halfH, 0);
         for (int i = 0; i <= detail; i++) {
@@ -611,7 +683,6 @@ class cylenderBody extends GeometricBody {
         endShape();
 
         popMatrix();
-
         super.draw();
     }
 }
@@ -640,7 +711,6 @@ class GraphNode {
     }
 }
 
-// Triangular window formed by three mutually connected graph nodes
 class GraphFace {
     GraphNode a, b, c;
 
@@ -661,24 +731,20 @@ class GraphBody extends RigidBody {
     float nodeHitRadius = 1.2f;
     Vector3D weightSkew = new Vector3D(0.0f, 0.0f, 0.0f);
 
-    // Default constructor: 16 nodes in a semi-random Torus with even weight
     public GraphBody(Point3D position, Quaternion orientation, float totalMass) {
         this(position, orientation, totalMass, 16, GraphShapePattern.TORUS, 7.0f, 0.15f, new Vector3D());
     }
 
-    // Parameterized constructor with node count n and pattern enum
     public GraphBody(Point3D position, Quaternion orientation, float totalMass,
                      int n, GraphShapePattern pattern) {
         this(position, orientation, totalMass, n, pattern, 7.0f, 0.15f, new Vector3D());
     }
 
-    // Parameterized constructor with node count n, pattern enum, and weight skew vector
     public GraphBody(Point3D position, Quaternion orientation, float totalMass,
                      int n, GraphShapePattern pattern, Vector3D weightSkew) {
         this(position, orientation, totalMass, n, pattern, 7.0f, 0.15f, weightSkew);
     }
 
-    // Full constructor with size, randomness, and directional weight skew control
     public GraphBody(Point3D position, Quaternion orientation, float totalMass,
                      int n, GraphShapePattern pattern, float shapeRadius,
                      float jitterRatio, Vector3D weightSkew) {
@@ -696,7 +762,6 @@ class GraphBody extends RigidBody {
         computeGravityCenter();
     }
 
-    // Regenerate shape and apply skew at runtime
     void generateShape(int n, GraphShapePattern pattern, Vector3D skew) {
         this.nodeCount = Math.max(3, n);
         this.shapePattern = (pattern != null) ? pattern : GraphShapePattern.TORUS;
@@ -706,7 +771,6 @@ class GraphBody extends RigidBody {
         computeGravityCenter();
     }
 
-    // Builds the graph with n semi-randomly distributed nodes and triangulates its windows
     void generateShape() {
         nodes.clear();
         faces.clear();
@@ -817,7 +881,6 @@ class GraphBody extends RigidBody {
             nodes.add(new GraphNode(pos, 1.0f));
         }
 
-        // Connect each node to its k nearest neighbors so triangular windows form naturally
         int kNeighbors = Math.min(4, nodeCount - 1);
         for (int i = 0; i < nodeCount; i++) {
             GraphNode current = nodes.get(i);
@@ -842,7 +905,6 @@ class GraphBody extends RigidBody {
             }
         }
 
-        // Stitch sequential backbone edges for continuous curves so no gaps remain
         if (shapePattern == GraphShapePattern.TORUS ||
             shapePattern == GraphShapePattern.HELIX ||
             shapePattern == GraphShapePattern.TREFOIL_KNOT) {
@@ -884,7 +946,6 @@ class GraphBody extends RigidBody {
                         if (l == j || l == k) continue;
                         GraphNode nl = nodes.get(l);
                         if (nk.neighbors.contains(nl) && nl.neighbors.contains(ni) && !nj.neighbors.contains(nl)) {
-                            // Split quad (ni - nj - nk - nl) along its shorter diagonal
                             float diagIK = ni.localPos.distanceSquaredTo(nk.localPos);
                             float diagJL = nj.localPos.distanceSquaredTo(nl.localPos);
                             if (diagIK <= diagJL) {
@@ -923,7 +984,6 @@ class GraphBody extends RigidBody {
             if (inFace[i]) continue;
             GraphNode node = nodes.get(i);
 
-            // Find the two closest distinct nodes in the graph
             int best1 = -1, best2 = -1;
             float d1 = Float.MAX_VALUE, d2 = Float.MAX_VALUE;
 
@@ -952,13 +1012,10 @@ class GraphBody extends RigidBody {
         }
     }
 
-
-    // Distributes total weight using the stored weightSkew vector
     void distributeWeights() {
         distributeWeights(this.weightSkew);
     }
 
-    // Skews weight distribution along a 3D direction vector
     void distributeWeights(Vector3D skew) {
         if (nodes.isEmpty()) return;
         this.weightSkew = (skew != null) ? skew : new Vector3D();
@@ -990,7 +1047,6 @@ class GraphBody extends RigidBody {
         }
     }
 
-    // Distributes total weight using explicit per-node weight ratios
     void distributeWeights(float[] nodeWeightRatios) {
         if (nodes.isEmpty() || nodeWeightRatios == null || nodeWeightRatios.length != nodes.size()) {
             distributeWeights();
@@ -1029,7 +1085,6 @@ class GraphBody extends RigidBody {
         if (totalWeight > 0.0f) {
             Vector3D offset = new Vector3D(wx / totalWeight, wy / totalWeight, wz / totalWeight);
 
-            // Recenter local node positions around the computed center of gravity
             for (GraphNode node : nodes) {
                 node.localPos = node.localPos.sub(offset);
             }
@@ -1037,7 +1092,6 @@ class GraphBody extends RigidBody {
         updateTransformMatrix();
     }
 
-    // Helper: Möller–Trumbore ray-segment vs. single triangular window in local space
     private float intersectTriangleSegment(Point3D localA, Vector3D dir,
                                            Point3D p0, Point3D p1, Point3D p2) {
         Vector3D v0 = new Vector3D(p0.getX(), p0.getY(), p0.getZ());
@@ -1068,7 +1122,6 @@ class GraphBody extends RigidBody {
         return -1.0f;
     }
 
-    // Detects collision against all triangular windows (faces) formed by the graph edges
     @Override
     Point3D interceptLine(Point3D a, Point3D b) {
         updateTransformMatrix();
@@ -1083,7 +1136,6 @@ class GraphBody extends RigidBody {
         float bestT = Float.MAX_VALUE;
         boolean hit = false;
 
-        // 1. Test every triangular window (plane) formed by the graph edges
         for (GraphFace face : faces) {
             float t = intersectTriangleSegment(
                 localA, dir,
@@ -1095,7 +1147,6 @@ class GraphBody extends RigidBody {
             }
         }
 
-        // 2. Fallback: if the graph is degenerate (< 3 connected nodes), test vertex spheres
         if (faces.isEmpty()) {
             for (GraphNode node : nodes) {
                 Vector3D m = localA.sub(node.localPos);
@@ -1124,23 +1175,31 @@ class GraphBody extends RigidBody {
     @Override
     void draw() {
         updateTransformMatrix();
+        float totalMass = (gravityCenter != null && gravityCenter.getMass() > 0.0f)
+            ? gravityCenter.getMass() : 1.0f;
+        float uniformPct = (!nodes.isEmpty()) ? (1.0f / nodes.size()) : 1.0f;
+
         pushMatrix();
         applyMatrix(getRotationMatrix().toPMatrix3D());
 
-        // 1. Draw solid translucent triangular windows (planes)
-        fill(110, 175, 255, 130);
+        // 1. Draw solid translucent triangular windows with per-vertex %TotalWeight gradient
         noStroke();
         beginShape(TRIANGLES);
         for (GraphFace face : faces) {
+            fill(weightPercentToColor(face.a.weight / totalMass, uniformPct, 145));
             vertex(face.a.localPos.getX(), face.a.localPos.getY(), face.a.localPos.getZ());
+
+            fill(weightPercentToColor(face.b.weight / totalMass, uniformPct, 145));
             vertex(face.b.localPos.getX(), face.b.localPos.getY(), face.b.localPos.getZ());
+
+            fill(weightPercentToColor(face.c.weight / totalMass, uniformPct, 145));
             vertex(face.c.localPos.getX(), face.c.localPos.getY(), face.c.localPos.getZ());
         }
         endShape();
 
         // 2. Draw graph wireframe edges
-        stroke(200, 235, 255);
-        strokeWeight(1.8f);
+        stroke(225, 240, 255, 190);
+        strokeWeight(1.5f);
         for (GraphNode node : nodes) {
             for (GraphNode neighbor : node.neighbors) {
                 line(node.localPos.getX(), node.localPos.getY(), node.localPos.getZ(),
@@ -1148,15 +1207,13 @@ class GraphBody extends RigidBody {
             }
         }
 
-        // 3. Draw graph vertices scaled by relative node weight
-        float avgWeight = (gravityCenter != null && !nodes.isEmpty())
-            ? (gravityCenter.getMass() / nodes.size()) : 1.0f;
-
+        // 3. Draw graph vertices colored & scaled by %TotalWeight
         noStroke();
-        fill(140, 215, 255);
         for (GraphNode node : nodes) {
-            float weightRatio = (avgWeight > 0.0f) ? (node.weight / avgWeight) : 1.0f;
-            float visualRadius = nodeHitRadius * 0.4f * constrain((float)Math.sqrt(weightRatio), 0.5f, 2.0f);
+            float pct = node.weight / totalMass;
+            float weightRatio = pct / uniformPct;
+            float visualRadius = nodeHitRadius * 0.42f * constrain((float)Math.sqrt(weightRatio), 0.55f, 2.0f);
+            fill(weightPercentToColor(pct, uniformPct, 255));
             pushMatrix();
             translate(node.localPos.getX(), node.localPos.getY(), node.localPos.getZ());
             sphere(visualRadius);
@@ -1164,7 +1221,6 @@ class GraphBody extends RigidBody {
         }
 
         popMatrix();
-
         super.draw();
     }
 }

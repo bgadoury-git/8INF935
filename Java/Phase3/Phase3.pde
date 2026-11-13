@@ -146,8 +146,23 @@ void keyPressed() {
     } else if (key == 'g' || key == 'G') {
         GraphShapePattern[] patterns = GraphShapePattern.values();
         currentPatternIndex = (currentPatternIndex + 1) % patterns.length;
-        graphBody.generateShape(24, patterns[currentPatternIndex], new Vector3D(0.0f, 1.2f, 0.0f));
-        lastHitInfo = "GraphBody pattern: " + patterns[currentPatternIndex];
+
+        // Randomize node count (10 to 36), jitter ratio (0.12 to 0.35), and 3D weight skew
+        int randomNodes = int(random(10, 37));
+        graphBody.jitterRatio = random(0.12f, 0.35f);
+
+        Vector3D randomSkew = new Vector3D(
+            random(-1.8f, 1.8f),
+            random(-1.8f, 1.8f),
+            random(-1.8f, 1.8f)
+        );
+
+        graphBody.generateShape(randomNodes, patterns[currentPatternIndex], randomSkew);
+        lastHitInfo = "GraphBody: " + patterns[currentPatternIndex]
+            + " | Nodes: " + randomNodes
+            + " | Skew: (" + nf(randomSkew.getX(), 1, 1) + ", "
+            + nf(randomSkew.getY(), 1, 1) + ", "
+            + nf(randomSkew.getZ(), 1, 1) + ")";
     }
 }
 
@@ -221,7 +236,24 @@ void drawHUD() {
     text("TriangleBody (Uneven)", width * 0.5f - 240, height * 0.5f - 165);
     text("SquareBody (Biased)", width * 0.5f + 220, height * 0.5f - 165);
     text("cylenderBody (Bottom-Heavy)", width * 0.5f - 220, height * 0.5f + 195);
-    text("GraphBody (" + graphBody.shapePattern + ")", width * 0.5f + 210, height * 0.5f + 195);
+    text("GraphBody (" + graphBody.shapePattern + ", n=" + graphBody.nodeCount + ")", width * 0.5f + 210, height * 0.5f + 195);
+    
+    // %TotalWeight color gradient legend
+    textAlign(LEFT, CENTER);
+    fill(220);
+    text("%TotalWeight:", 15, height - 22);
+    int barX = 115, barY = height - 28, barW = 150, barH = 12;
+    for (int i = 0; i < barW; i++) {
+        float t = (float)i / barW;
+        int c = (t < 0.5f)
+            ? lerpColor(color(45, 135, 255), color(60, 225, 130), t * 2.0f)
+            : lerpColor(color(60, 225, 130), color(255, 65, 50), (t - 0.5f) * 2.0f);
+        stroke(c);
+        line(barX + i, barY, barX + i, barY + barH);
+    }
+    noStroke();
+    fill(180);
+    text("Low          Avg          High    |    Yellow/Magenta Crosshair = Center of Mass", barX + barW + 10, height - 22);
 
     hint(ENABLE_DEPTH_TEST);
 }
