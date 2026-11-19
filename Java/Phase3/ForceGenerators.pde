@@ -1,4 +1,5 @@
 // Concrete Force Generators
+// Phase 3: Particle -> RigidBody. Forces below act on the center of mass (no torque).
 
 class GravityGenerator implements ForceGenerator {
     private final Vector3D m_gravity;
@@ -9,11 +10,11 @@ class GravityGenerator implements ForceGenerator {
     }
 
     @Override
-    public void updateForce(Particle particle, float dt) {
+    public void updateForce(RigidBody body, float dt) {
         // Infinite mass receives no force
-        if (particle.getInverseMass() <= 0.0f) return;
+        if (body.getInverseMass() <= 0.0f) return;
         // Force = acceleration × mass; integration divides by mass to recover g
-        particle.addForce(m_gravity.mult(particle.getMass()));
+        body.addForce(m_gravity.mult(body.getMass())); // cmt applied at the center of mass: no torque
     }
 }
 
@@ -40,17 +41,18 @@ class ConstantForceGenerator implements ForceGenerator
     boolean isActive() { return m_active; }
 
     @Override
-    public void updateForce(Particle particle, float dt) {
+    public void updateForce(RigidBody body, float dt) {
         // no force when inactive or for infinite mass
-        if (!m_active || particle.getInverseMass() <= 0.0f) return;
+        if (!m_active || body.getInverseMass() <= 0.0f) return;
         // addForce only reads values, so passing the internal vector is safe
-        particle.addForce(m_force);
+        body.addForce(m_force);
     }
 }
 
 
-void applyExplosion(ArrayList<Particle> targets, Point3D center, float radius, float maxImpulse) {
-    for (Particle p : targets) {
+// Impulse at each body's center of mass: pushes, does not spin
+void applyExplosion(ArrayList<RigidBody> targets, Point3D center, float radius, float maxImpulse) {
+    for (RigidBody p : targets) {
         if (p.getInverseMass() <= 0.0f) continue;
 
         Vector3D offset = p.getPosition().sub(center);

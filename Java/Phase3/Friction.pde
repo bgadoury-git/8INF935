@@ -157,7 +157,7 @@ class DragForceGenerator implements ForceGenerator {
     void setEnabled(boolean enabled) { m_enabled = enabled; }
 
     @Override
-    public void updateForce(Particle p, float dt) {
+    public void updateForce(RigidBody p, float dt) {
         if (!m_enabled) return;
         if (p.getInverseMass() <= 0.0f) return; // masse infinie : ne bouge pas
 

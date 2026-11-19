@@ -15,6 +15,13 @@ boolean autoRotate = true;
 GraphBody graphBody;
 int currentPatternIndex = 3; // Starts on TREFOIL_KNOT
 
+// fixed-timestep simulation
+ForceRegistry forceRegistry = new ForceRegistry();   // empty for now (no gravity in this scene)
+IntegrationMode currentIntegrationMode = IntegrationMode.VelocityVerlet;
+float timeAccumulator = 0.0f;
+long lastTimeNs = 0;
+final float KICK_SPEED = 80.0f;   // impulse = mass * KICK_SPEED -> delta_v = 80 px/s
+
 // Camera parameters (Processing default perspective)
 float camX, camY, camZ;
 float targetX, targetY, targetZ;
@@ -82,9 +89,29 @@ void setup() {
     );
     graphBody.nodeHitRadius = 8.0f;
     bodies.add(graphBody);
+
+    // d^dt damping: a hit body slides a little then stops,
+    // but keeps spinning for a while (free rotation and gyroscopic effect stay visible)
+    for (RigidBody body : bodies) {
+        body.setLinearDamping(0.1f);   // loses 90 % of its velocity per second
+        body.setAngularDamping(0.9f);  // loses 10 % of its rotation per second
+    }
+
+    new IntegratorTests().run();
+    lastTimeNs = System.nanoTime();
 }
 
 void draw() {
+    // fixed-timestep physics (just like in phase 2)
+    long now = System.nanoTime();
+    float frameTime = min((now - lastTimeNs) / 1.0e9f, PhysicsConstants.MAX_FRAME_TIME);
+    lastTimeNs = now;
+    timeAccumulator += frameTime;
+    while (timeAccumulator >= PhysicsConstants.FIXED_TIMESTEP) {
+        integrateStep(bodies, forceRegistry, PhysicsConstants.FIXED_TIMESTEP, currentIntegrationMode);
+        timeAccumulator -= PhysicsConstants.FIXED_TIMESTEP;
+    }
+
     background(30);
     lights();
 
@@ -143,6 +170,8 @@ void keyPressed() {
         lastRayStart = null;
         lastRayEnd = null;
         lastHitInfo = "Cleared hit markers.";
+    } else if (key == 'i' || key == 'I') {
+        currentIntegrationMode = nextIntegrationMode(currentIntegrationMode); // cycle integrators
     } else if (key == 'g' || key == 'G') {
         GraphShapePattern[] patterns = GraphShapePattern.values();
         currentPatternIndex = (currentPatternIndex + 1) % patterns.length;
@@ -211,6 +240,7 @@ void shootRayFromMouse(float mx, float my) {
 
     if (closestHit != null) {
         hitDots.add(closestHit);
+        hitBody.applyImpulseAtPoint(dir.mult(hitBody.getMass() * KICK_SPEED), closestHit);
         lastHitInfo = "HIT " + hitBody.getClass().getSimpleName() + " at ("
             + nf(closestHit.getX(), 1, 1) + ", "
             + nf(closestHit.getY(), 1, 1) + ", "
@@ -230,6 +260,7 @@ void drawHUD() {
     textAlign(LEFT, TOP);
     text("Controls: [Left Click] Shoot Ray   [SPACE] Pause/Rotate   [G] Cycle Graph Shape   [R] Clear Dots", 15, 15);
     text("Status: " + lastHitInfo + "   |   Total Hits: " + hitDots.size(), 15, 35);
+    text("[I] Integrator: " + currentIntegrationMode.name() + "   |   A hit gives an impulse at the hit point", 15, 55);
 
     textAlign(CENTER, TOP);
     fill(180);

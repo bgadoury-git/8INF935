@@ -7,10 +7,28 @@ class RigidBody {
     private Quaternion RotationQuaternion;
     Particle gravityCenter;
 
+    // ---------- rotational dynamics ----------
+    private Vector3D m_angularMomentum = new Vector3D();     // L (world)
+    private Matrix3 m_inertiaBody;                           // I    (local, constant)
+    private Matrix3 m_inverseInertiaBody;                    // I^-1 (local, constant)
+    private Matrix3 m_inverseInertiaWorld = new Matrix3();   // derived
+    private Vector3D m_angularVelocity = new Vector3D();     // omega, derived
+    private float m_angularDamping = 1.0f;
+    private Vector3D m_torqueAccum = new Vector3D();
+    private Vector3D m_lastAngularAcceleration = new Vector3D();
+
+    // internal state of the angular integration
+    private boolean m_firstAngularVerletStep = true;
+    private boolean m_hasTorqueCache = false;
+    private Vector3D m_cachedTorque = new Vector3D();
+    private boolean m_angularDrifted = false;
+    private IntegrationMode m_lastAngularMode = null;
+
     public RigidBody() {
         this.RotationQuaternion = new Quaternion();
         this.gravityCenter = new GravityCenter(new Point3D(), new Vector3D());
         this.RotationMatrix = new Matrix4(RotationQuaternion, gravityCenter.getPosition());
+        setInertiaTensor(defaultInertiaTensor()); // PLACEHOLDER until a shape computes its own
     }
 
     public RigidBody(Point3D position, Quaternion orientation, float mass) {
@@ -18,6 +36,15 @@ class RigidBody {
         this.gravityCenter = new GravityCenter(position, new Vector3D());
         this.gravityCenter.setMass(mass);
         this.RotationMatrix = new Matrix4(RotationQuaternion, gravityCenter.getPosition());
+        // Placeholder: subclasses replace it in computeGravityCenter(). computeInertiaTensor()
+        // cannot be called here: subclass fields are not initialized yet during the parent constructor.
+        setInertiaTensor(defaultInertiaTensor());
+    }
+
+    // "Bare" body with a given local inertia tensor (tests, demos)
+    public RigidBody(Point3D position, Quaternion orientation, float mass, Matrix3 inertiaTensorLocal) {
+        this(position, orientation, mass);
+        setInertiaTensor(inertiaTensorLocal);
     }
 
     // --- Getters ---
@@ -45,7 +72,7 @@ class RigidBody {
 
     void setRotationQuaternion(Quaternion rotationQuaternion) {
         this.RotationQuaternion = rotationQuaternion.normalized();
-        updateTransformMatrix();
+        updateDerivedData();
     }
 
     void setGravityCenter(Particle gravityCenter) {
@@ -91,7 +118,13 @@ class RigidBody {
     }
 
     void computeGravityCenter() {
-        updateTransformMatrix();
+        refreshInertia(); // also calls updateTransformMatrix
+    }
+
+    // LOCAL inertia tensor (center of mass = origin of the local frame).
+    // Subclasses recompute it from their mass distribution.
+    Matrix3 computeInertiaTensor() {
+        return new Matrix3(m_inertiaBody);
     }
 
     void draw() {
@@ -130,6 +163,283 @@ class RigidBody {
 
         popMatrix();
         hint(ENABLE_DEPTH_TEST);
+    }
+
+    // ==================================================================
+    // Dynamics (phase 3 integrator)
+    // ==================================================================
+
+    // ---------- Inertia tensor ----------
+
+    // Solid sphere of radius 1: PLACEHOLDER until the shape computes its own tensor
+    Matrix3 defaultInertiaTensor() {
+        float i = 0.4f * gravityCenter.getMass();
+        Matrix3 m = new Matrix3();
+        m.setDiagonal(i, i, i);
+        return m;
+    }
+
+    // Recompute the tensor from the current mass distribution (shape changed, etc.)
+    void refreshInertia() {
+        setInertiaTensor(computeInertiaTensor());
+    }
+
+    void setInertiaTensor(Matrix3 inertiaLocal) {
+        if (!hasFiniteMass()) {
+            m_inertiaBody = zeroMatrix3();
+            m_inverseInertiaBody = zeroMatrix3();
+        } else {
+            float meanDiag = (inertiaLocal.get(0, 0) + inertiaLocal.get(1, 1) + inertiaLocal.get(2, 2)) / 3.0f;
+            float det = inertiaLocal.determinant();
+            if (meanDiag <= 0.0f || Math.abs(det) < 1e-6f * meanDiag * meanDiag * meanDiag) {
+                // Degenerate distribution (aligned masses...): the tensor cannot be inverted.
+                // Use an isotropic tensor of the same "size" so the simulation keeps running.
+                println("RigidBody: singular inertia tensor, isotropic fallback used");
+                float i = (meanDiag > 0.0f) ? meanDiag : 0.4f * getMass();
+                inertiaLocal = new Matrix3();
+                inertiaLocal.setDiagonal(i, i, i);
+            }
+            m_inertiaBody = new Matrix3(inertiaLocal);
+            m_inverseInertiaBody = inertiaLocal.inverse();
+        }
+        updateDerivedData();
+    }
+
+    Matrix3 getInertiaTensorLocal() { return new Matrix3(m_inertiaBody); }
+    Matrix3 getInertiaTensorWorld() { return m_inertiaBody.changeBasis(new Matrix3(RotationQuaternion)); }
+    Matrix3 getInverseInertiaTensorWorld() { return new Matrix3(m_inverseInertiaWorld); }
+
+    private Matrix3 zeroMatrix3() {
+        Matrix3 m = new Matrix3();
+        m.setDiagonal(0.0f, 0.0f, 0.0f);
+        return m;
+    }
+
+    // ---------- Derived data: ONE place, fixed order ----------
+    void updateDerivedData() {
+        RotationQuaternion.normalize();                                     // unit q
+        updateTransformMatrix();                                            // Matrix4 (R + position)
+        if (m_inverseInertiaBody == null) return;                           // during construction
+        Matrix3 rotation = new Matrix3(RotationQuaternion);                 // R
+        m_inverseInertiaWorld = m_inverseInertiaBody.changeBasis(rotation); // R I^-1 R^T
+        refreshAngularVelocity();                                           // omega = I^-1_world L
+    }
+
+    private void refreshAngularVelocity() {
+        m_angularVelocity = m_inverseInertiaWorld.transform(m_angularMomentum);
+    }
+
+    // ---------- Forces and torques ----------
+
+    // Force at the center of mass, no torque
+    void addForce(Vector3D force) {
+        gravityCenter.addForce(force);
+    }
+
+    // Force at a WORLD point
+    void addForceAtPoint(Vector3D force, Point3D worldPoint) {
+        addForce(force);
+        Vector3D r = worldPoint.sub(getPosition());
+        addTorque(r.cross(force));
+    }
+
+    // Force at a BODY point follows the body's rotation
+    void addForceAtBodyPoint(Vector3D force, Point3D localPoint) {
+        addForceAtPoint(force, RotationMatrix.transform(localPoint));
+    }
+
+    void addTorque(Vector3D torque) {
+        m_torqueAccum = m_torqueAccum.add(torque);
+    }
+
+    // ---------- Impulses ----------
+
+    // At the center of mass: Δv = J / m
+    void applyImpulse(Vector3D impulse) {
+        gravityCenter.applyImpulse(impulse);
+    }
+
+    // At the point returned by interceptLine: delta_v = J / m and delta_L = r × J
+    void applyImpulseAtPoint(Vector3D impulse, Point3D worldPoint) {
+        if (!hasFiniteMass()) return;
+        applyImpulse(impulse);
+        Vector3D r = worldPoint.sub(getPosition());
+        applyAngularImpulse(r.cross(impulse));
+    }
+
+    void applyAngularImpulse(Vector3D deltaL) {
+        if (!hasFiniteMass()) return;
+        m_angularMomentum = m_angularMomentum.add(deltaL);
+        refreshAngularVelocity();
+    }
+
+    // ---------- Integration: first half of the step (Velocity Verlet only) ----------
+    void preForce(float dt, IntegrationMode mode) {
+        if (!hasFiniteMass()) return;
+        gravityCenter.preForce(dt, mode);                 // translation (LinearMotion)
+
+        if (mode != m_lastAngularMode) {
+            m_hasTorqueCache = false;
+            m_lastAngularMode = mode;
+        }
+        m_angularDrifted = false;
+        if (mode == IntegrationMode.VelocityVerlet && m_hasTorqueCache) {
+            addScaled(m_angularMomentum, m_cachedTorque, 0.5f * dt);   // half-kick: L_{n+1/2}
+            driftOrientation(dt);                                      // drift: q_{n+1}
+            m_angularDrifted = true;
+        }
+        // force generators must see the UP-TO-DATE transform
+        if (mode == IntegrationMode.VelocityVerlet) updateDerivedData();
+    }
+
+    // ---------- Integration: second half of the step ----------
+    void postForce(float dt, IntegrationMode mode) {
+        Vector3D alpha = new Vector3D();
+        if (hasFiniteMass()) {
+            alpha = m_inverseInertiaWorld.transform(m_torqueAccum);   // a = I^-1 torque (debug)
+        }
+        // translation: integrates, records the last acceleration, clears the force accumulator
+        gravityCenter.postForce(dt, mode);
+        if (hasFiniteMass()) {
+            integrateAngular(dt, mode);
+            updateDerivedData();
+        }
+        m_lastAngularAcceleration = alpha;
+        m_torqueAccum = new Vector3D();
+    }
+
+    private void integrateAngular(float dt, IntegrationMode mode) {
+        Vector3D torque = m_torqueAccum;
+        float factor = (float)Math.pow(m_angularDamping, dt);
+
+        switch (mode) {
+            case SemiImplicitEuler: {
+                addScaled(m_angularMomentum, torque, dt);          // L_{n+1} = L_n + torque dt
+                scale(m_angularMomentum, factor);
+                driftOrientation(dt);                             // q_n -> q_{n+1} with L_{n+1}
+                break;
+            }
+            case PositionVerlet: {
+                // Like the translation: L "lives at the half step". First step = half-kick only.
+                float kick = m_firstAngularVerletStep ? 0.5f * dt : dt;
+                addScaled(m_angularMomentum, torque, kick);
+                scale(m_angularMomentum, factor);
+                driftOrientation(dt);
+                break;
+            }
+            case VelocityVerlet: {
+                if (!m_angularDrifted) {
+                    // first step (no cache): full kick-drift-kick with torque_{n+1} ≈ torque_n
+                    addScaled(m_angularMomentum, torque, 0.5f * dt);
+                    driftOrientation(dt);
+                }
+                addScaled(m_angularMomentum, torque, 0.5f * dt);   // second half-kick
+                scale(m_angularMomentum, factor);
+                m_cachedTorque = new Vector3D(torque.getX(), torque.getY(), torque.getZ());
+                m_hasTorqueCache = true;
+                break;
+            }
+        }
+        m_angularDrifted = false;
+        m_firstAngularVerletStep = false;
+    }
+
+    // Rotate q during dt with L fixed (the angular "drift").
+
+    private void driftOrientation(float dt) {
+        refreshAngularVelocity();                                   // omega(q_n)
+        Quaternion half = new Quaternion(RotationQuaternion);
+        half.addScaledVector(m_angularVelocity, 0.5f * dt);
+        half.normalize();
+        Vector3D omegaMid = m_inverseInertiaBody.changeBasis(new Matrix3(half)).transform(m_angularMomentum);
+        RotationQuaternion.addScaledVector(omegaMid, dt);
+        RotationQuaternion.normalize();
+        // the "official" omega (I^-1_world(q_{n+1}) L) is recomputed by updateDerivedData()
+    }
+
+    // Shortcut for tests (forces already in the accumulators). Simulation: integrateStep().
+    void integrate(float dt, IntegrationMode mode) {
+        preForce(dt, mode);
+        postForce(dt, mode);
+    }
+
+    // ---------- Accessors ----------
+    Vector3D getVelocity() { return gravityCenter.getVelocity(); }
+    void setVelocity(Vector3D v) { gravityCenter.setVelocity(v); }
+    float getMass() { return gravityCenter.getMass(); }
+    float getInverseMass() { return gravityCenter.getInverseMass(); }
+    boolean hasFiniteMass() { return gravityCenter.hasFiniteMass(); }
+
+    Vector3D getAngularMomentum() { return copy(m_angularMomentum); }
+    void setAngularMomentum(Vector3D L) {
+        if (!hasFiniteMass()) return;
+        m_angularMomentum = copy(L);
+        refreshAngularVelocity();
+    }
+
+    Vector3D getAngularVelocity() { return copy(m_angularVelocity); }
+    void setAngularVelocity(Vector3D omega) {
+        if (!hasFiniteMass()) return;
+        m_angularMomentum = getInertiaTensorWorld().transform(omega);
+        refreshAngularVelocity();
+    }
+
+    Point3D localToWorld(Point3D local) { return RotationMatrix.transform(local); }
+    Point3D worldToLocal(Point3D world) { return RotationMatrix.transformInverse(world); }
+    Vector3D localDirectionToWorld(Vector3D local) { return RotationMatrix.transformDirection(local); }
+
+    float getRotationalKineticEnergy() { return 0.5f * m_angularVelocity.dot(m_angularMomentum); }
+
+    float getLinearDamping() { return gravityCenter.getLinearDamping(); }
+    void setLinearDamping(float d) { gravityCenter.setLinearDamping(d); }
+    float getAngularDamping() { return m_angularDamping; }
+    void setAngularDamping(float d) { m_angularDamping = d; }
+
+    Vector3D getForceAccumulator() { return copy(gravityCenter.getForceAccumulator()); }
+    Vector3D getTorqueAccumulator() { return copy(m_torqueAccum); }
+    Vector3D getLastAcceleration() { return gravityCenter.getLastAcceleration(); }
+    Vector3D getLastAngularAcceleration() { return copy(m_lastAngularAcceleration); }
+
+    // ---------- helpers ----------
+    private Vector3D copy(Vector3D v) { return new Vector3D(v.getX(), v.getY(), v.getZ()); }
+    private void addScaled(Vector3D target, Vector3D v, float s) {
+        target.setX(target.getX() + v.getX() * s);
+        target.setY(target.getY() + v.getY() * s);
+        target.setZ(target.getZ() + v.getZ() * s);
+    }
+    private void scale(Vector3D v, float s) {
+        v.setX(v.getX() * s);
+        v.setY(v.getY() * s);
+        v.setZ(v.getZ() * s);
+    }
+}
+
+// ==========================================
+// InertiaAccumulator: sum of inertia tensors (ch. 9)
+// ------------------------------------------
+
+class InertiaAccumulator {
+    float ix, iy, iz;      // moments (diagonal)
+    float ixy, ixz, iyz;   // products of inertia (appear with a minus sign off the diagonal)
+
+    void addPointMass(float m, float x, float y, float z) {
+        ix += m * (y * y + z * z);
+        iy += m * (x * x + z * z);
+        iz += m * (x * x + y * y);
+        ixy += m * x * y;
+        ixz += m * x * z;
+        iyz += m * y * z;
+    }
+
+    // Own (diagonal) tensor of a continuous piece, around its own center
+    void addLocalDiagonal(float jx, float jy, float jz) {
+        ix += jx; iy += jy; iz += jz;
+    }
+
+    Matrix3 toMatrix() {
+        Matrix3 m = new Matrix3();
+        m.setInertiaTensorCoeffs(ix, iy, iz, ixy, ixz, iyz);
+        return m;
     }
 }
 
@@ -231,7 +541,17 @@ class TriangleBody extends GeometricBody {
         } else {
             geometricCenter = new Point3D(cx, cy, cz);
         }
-        updateTransformMatrix();
+        refreshInertia(); // inertia tensor + transform (was updateTransformMatrix)
+    }
+
+    // 3 point masses at the vertices (already centered on the center of mass)
+    @Override
+    Matrix3 computeInertiaTensor() {
+        InertiaAccumulator acc = new InertiaAccumulator();
+        acc.addPointMass(m1, x1, y1, z1);
+        acc.addPointMass(m2, x2, y2, z2);
+        acc.addPointMass(m3, x3, y3, z3);
+        return acc.toMatrix();
     }
 
     @Override
@@ -402,7 +722,22 @@ class SquareBody extends GeometricBody {
             gz /= totalMass;
         }
         geometricCenter = new Point3D(-gx, -gy, -gz);
-        updateTransformMatrix();
+        refreshInertia(); // inertia tensor + transform (was updateTransformMatrix)
+    }
+
+    // 8 point masses at the corners. In the local frame (origin = center of mass),
+    // corner i is at geometricCenter + (+-w/2, +-h/2, +-d/2), as in draw().
+    @Override
+    Matrix3 computeInertiaTensor() {
+        InertiaAccumulator acc = new InertiaAccumulator();
+        float hx = width * 0.5f, hy = height * 0.5f, hz = depth * 0.5f;
+        for (int i = 0; i < 8; i++) {
+            float cx = geometricCenter.getX() + (((i & 1) == 0) ? -hx : hx);
+            float cy = geometricCenter.getY() + (((i & 2) == 0) ? -hy : hy);
+            float cz = geometricCenter.getZ() + (((i & 4) == 0) ? -hz : hz);
+            acc.addPointMass(cornerMasses[i], cx, cy, cz);
+        }
+        return acc.toMatrix();
     }
 
     @Override
@@ -568,7 +903,28 @@ class cylenderBody extends GeometricBody {
         }
 
         geometricCenter = new Point3D(0.0f, -gy, 0.0f);
-        updateTransformMatrix();
+        refreshInertia(); // inertia tensor + transform (was updateTransformMatrix)
+    }
+
+    // Continuous pieces + parallel axis theorem
+    @Override
+    Matrix3 computeInertiaTensor() {
+        InertiaAccumulator acc = new InertiaAccumulator();
+        float r2 = radius * radius;
+        float halfH = height * 0.5f;
+        float yc = geometricCenter.getY();
+
+        acc.addLocalDiagonal(0.25f * topCapMass * r2, 0.5f * topCapMass * r2, 0.25f * topCapMass * r2);
+        acc.addPointMass(topCapMass, 0.0f, yc + halfH, 0.0f);
+
+        acc.addLocalDiagonal(0.25f * bottomCapMass * r2, 0.5f * bottomCapMass * r2, 0.25f * bottomCapMass * r2);
+        acc.addPointMass(bottomCapMass, 0.0f, yc - halfH, 0.0f);
+
+        float side = 0.5f * lateralMass * r2 + lateralMass * height * height / 12.0f;
+        acc.addLocalDiagonal(side, lateralMass * r2, side);
+        acc.addPointMass(lateralMass, 0.0f, yc, 0.0f);
+
+        return acc.toMatrix();
     }
 
     @Override
@@ -1068,7 +1424,7 @@ class GraphBody extends RigidBody {
     @Override
     void computeGravityCenter() {
         if (nodes.isEmpty()) {
-            updateTransformMatrix();
+            refreshInertia(); // was updateTransformMatrix
             return;
         }
 
@@ -1089,7 +1445,18 @@ class GraphBody extends RigidBody {
                 node.localPos = node.localPos.sub(offset);
             }
         }
-        updateTransformMatrix();
+        refreshInertia(); // inertia tensor + transform (was updateTransformMatrix)
+    }
+
+    // One point mass per node (positions already centered on the center of mass)
+    @Override
+    Matrix3 computeInertiaTensor() {
+        if (nodes == null || nodes.isEmpty()) return defaultInertiaTensor();
+        InertiaAccumulator acc = new InertiaAccumulator();
+        for (GraphNode node : nodes) {
+            acc.addPointMass(node.weight, node.localPos.getX(), node.localPos.getY(), node.localPos.getZ());
+        }
+        return acc.toMatrix();
     }
 
     private float intersectTriangleSegment(Point3D localA, Vector3D dir,

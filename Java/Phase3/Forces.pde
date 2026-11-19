@@ -1,19 +1,21 @@
 // Generate and register Forces
+// Phase 3: the registry now works on rigid bodies (Particle -> RigidBody).
+// A rigid body's translation forces end up in its gravityCenter particle (RigidBody.addForce).
 
 
 interface ForceGenerator 
 {
-    void updateForce(Particle particle, float deltaTime);
+    void updateForce(RigidBody body, float deltaTime);
 }
 
 class ForceRegistration
 {
-    final Particle particle;
+    final RigidBody body;
     final ForceGenerator generator;
     
-    ForceRegistration(Particle particle, ForceGenerator generator)
+    ForceRegistration(RigidBody body, ForceGenerator generator)
     {
-        this.particle = particle;
+        this.body = body;
         this.generator = generator;
     }
 }
@@ -22,43 +24,43 @@ class ForceRegistry
 {
     private final ArrayList<ForceRegistration> m_registrations = new ArrayList<ForceRegistration>();
     
-    void add(Particle particle, ForceGenerator generator)
+    void add(RigidBody body, ForceGenerator generator)
     {
-        if(particle == null || generator == null)
+        if(body == null || generator == null)
         {
-            throw new IllegalArgumentException("ForceRegistry.add: particle and generator must not be null");
+            throw new IllegalArgumentException("ForceRegistry.add: body and generator must not be null");
         }
-        if (contains(particle, generator)) return;
+        if (contains(body, generator)) return;
         
-        m_registrations.add(new ForceRegistration(particle, generator));
+        m_registrations.add(new ForceRegistration(body, generator));
     }
     
-    boolean contains(Particle particle, ForceGenerator generator)
+    boolean contains(RigidBody body, ForceGenerator generator)
     {
         for (ForceRegistration registration : m_registrations)
         {
-            if(registration.particle == particle && registration.generator == generator) return true;
+            if(registration.body == body && registration.generator == generator) return true;
         }
         return false;
     }
     
-    void remove(Particle particle, ForceGenerator generator)
+    void remove(RigidBody body, ForceGenerator generator)
     {
         for (int i = m_registrations.size() - 1; i >= 0; i--)
         {
             ForceRegistration registration = m_registrations.get(i);
-            if (registration.particle == particle && registration.generator == generator)
+            if (registration.body == body && registration.generator == generator)
             {
                 m_registrations.remove(i);
             }
         }
     }
     
-    void removeParticle(Particle particle) 
+    void removeBody(RigidBody body) 
     {
         for (int i = m_registrations.size() - 1; i >= 0; i--) 
         {
-            if (m_registrations.get(i).particle == particle) 
+            if (m_registrations.get(i).body == body) 
             {
                 m_registrations.remove(i);
             }
@@ -79,7 +81,7 @@ class ForceRegistry
     {
         for (ForceRegistration r : m_registrations) 
         {
-            r.generator.updateForce(r.particle, dt);
+            r.generator.updateForce(r.body, dt);
         }
     }
     
