@@ -2,7 +2,7 @@
 // Phase 3 : fichier principal du sketch
 // ------------------------------------------
 // Scene de test visuelle pour RigidBody et interceptLine()
-// Game loop with Main Menu, Model Viewer, Game (TODO) and End Screen
+// Game loop with Main Menu, Model Viewer, Game and End Screen
 // ==========================================
 
 // ── Scene state machine ──────────────────────────────────────────────
@@ -33,11 +33,11 @@ float camX, camY, camZ;
 float targetX, targetY, targetZ;
 
 // ── Button helpers ───────────────────────────────────────────────────
-// A lightweight struct-like class for clickable rectangles
 class Button {
     String label;
     float  x, y, w, h;
     color  base, hover, textCol;
+    float  fontSize = 22;
 
     Button(String label, float x, float y, float w, float h,
            color base, color hover, color textCol) {
@@ -47,6 +47,12 @@ class Button {
         this.base    = base;
         this.hover   = hover;
         this.textCol = textCol;
+    }
+
+    Button(String label, float x, float y, float w, float h,
+           color base, color hover, color textCol, float fontSize) {
+        this(label, x, y, w, h, base, hover, textCol);
+        this.fontSize = fontSize;
     }
 
     void setBounds(float x, float y, float w, float h) {
@@ -61,10 +67,10 @@ class Button {
     void draw() {
         noStroke();
         fill(isOver() ? hover : base);
-        rect(x, y, w, h, 8);
+        rect(x, y, w, h, 10);
         fill(textCol);
         textAlign(CENTER, CENTER);
-        textSize(18);
+        textSize(fontSize);
         text(label, x + w * 0.5f, y + h * 0.5f);
     }
 }
@@ -73,13 +79,14 @@ class Button {
 Button btnModelViewer, btnGame, btnQuit;        // Main menu
 Button btnEndReplay, btnEndMainMenu;            // End screen
 Button btnViewerBack;                           // Model Viewer HUD
-Button btnGameBack;                             // Game HUD (TODO)
+Button btnGameBack;                             // Game HUD
 
 // ==========================================
 //  SETUP
 // ==========================================
 void setup() {
-    size(800, 600, P3D);
+    fullScreen(P3D);
+    size(1024, 768, P3D);
 
     // Camera defaults
     camX    = width  * 0.5f;
@@ -89,25 +96,25 @@ void setup() {
     targetY = height * 0.5f;
     targetZ = 0.0f;
 
-    // Build buttons ------------------------------------------------
-    float bW = 260, bH = 50;
+    // Build buttons (scaled up) ------------------------------------
+    float bW = 320, bH = 62;
     float bX = width * 0.5f - bW * 0.5f;
     color bBase  = color(50, 100, 180);
     color bHover = color(80, 140, 230);
     color bText  = color(255);
 
     // Main menu
-    btnModelViewer = new Button("Model Viewer", bX, 230, bW, bH, bBase,            bHover,            bText);
-    btnGame        = new Button("Game",         bX, 300, bW, bH, color(40,120,60), color(60,170,80),  bText);
-    btnQuit        = new Button("Quit",         bX, 370, bW, bH, color(160,40,40), color(210,60,60),  bText);
+    btnModelViewer = new Button("Model Viewer", bX, 260, bW, bH, bBase,            bHover,            bText, 22);
+    btnGame        = new Button("Game",         bX, 340, bW, bH, color(40,120,60), color(60,170,80),  bText, 22);
+    btnQuit        = new Button("Quit",         bX, 420, bW, bH, color(160,40,40), color(210,60,60),  bText, 22);
 
     // End screen
-    btnEndReplay   = new Button("Replay",         bX, 280, bW, bH, bBase,          bHover,          bText);
-    btnEndMainMenu = new Button("Back to Main Menu", bX, 350, bW, bH, color(80,80,80),color(110,110,110),bText);
+    btnEndReplay   = new Button("Replay",            bX, 320, bW, bH, bBase,          bHover,          bText, 22);
+    btnEndMainMenu = new Button("Back to Main Menu", bX, 400, bW, bH, color(80,80,80),color(110,110,110),bText, 22);
 
     // In-scene back buttons (top-right corner)
-    btnViewerBack  = new Button("< Main Menu", width - 155, 10, 145, 34, color(60,60,60), color(100,100,100), bText);
-    btnGameBack    = new Button("< Main Menu", width - 155, 10, 145, 34, color(60,60,60), color(100,100,100), bText);
+    btnViewerBack  = new Button("< Main Menu", width - 190, 12, 175, 44, color(60,60,60), color(100,100,100), bText, 18);
+    btnGameBack    = new Button("< Main Menu", width - 190, 12, 175, 44, color(60,60,60), color(100,100,100), bText, 18);
 
     // Build Model Viewer scene
     initModelViewer();
@@ -121,10 +128,10 @@ void setup() {
 // ==========================================
 void draw() {
     switch (currentScene) {
-        case MAIN_MENU:   drawMainMenu();   break;
+        case MAIN_MENU:    drawMainMenu();    break;
         case MODEL_VIEWER: drawModelViewer(); break;
-        case GAME:        drawGame();       break;
-        case END_SCREEN:  drawEndScreen();  break;
+        case GAME:         drawGame();        break;
+        case END_SCREEN:   drawEndScreen();   break;
     }
 }
 
@@ -159,7 +166,6 @@ void keyPressed() {
     if (currentScene == Scene.GAME) {
         handleGameKey();
     }
-    // ESC always goes back to main menu (instead of closing the sketch)
     if (keyCode == ESC) {
         key = 0; // suppress Processing's default quit-on-ESC
         goToMainMenu();
@@ -179,12 +185,11 @@ void keyReleased() {
 //  SCENE TRANSITIONS
 // ==========================================
 void goToMainMenu() {
-    keyW = false; keyA = false; keyS = false; keyD = false;
+    keyW = false; keyA = false; keyS = false; keyD = false; keySpace = false; keyShift = false;
     currentScene = Scene.MAIN_MENU;
 }
 
 void startModelViewer() {
-    // Re-init so physics are fresh each visit
     initModelViewer();
     lastTimeNs  = System.nanoTime();
     currentScene = Scene.MODEL_VIEWER;
@@ -196,7 +201,7 @@ void startGame() {
 }
 
 void goToEndScreen() {
-    keyW = false; keyA = false; keyS = false; keyD = false;
+    keyW = false; keyA = false; keyS = false; keyD = false; keySpace = false; keyShift = false;
     currentScene = Scene.END_SCREEN;
 }
 
@@ -208,27 +213,27 @@ void drawMainMenu() {
     camera();
     noLights();
 
-    // Dynamically center buttons according to current window size
-    float bW = 260, bH = 50;
+    // Dynamically center scaled buttons
+    float bW = 320, bH = 62;
     float bX = width * 0.5f - bW * 0.5f;
-    float startY = height * 0.40f;
+    float startY = height * 0.42f;
     btnModelViewer.setBounds(bX, startY, bW, bH);
-    btnGame.setBounds(bX, startY + 70, bW, bH);
-    btnQuit.setBounds(bX, startY + 140, bW, bH);
+    btnGame.setBounds(bX, startY + 82, bW, bH);
+    btnQuit.setBounds(bX, startY + 164, bW, bH);
 
     // Title
     fill(255);
     textAlign(CENTER, CENTER);
-    textSize(42);
-    text("Phase 3", width * 0.5f, height * 0.20f);
-    textSize(18);
-    fill(160);
-    text("RigidBody Physics Engine", width * 0.5f, height * 0.20f + 50);
+    textSize(56);
+    text("Phase 3", width * 0.5f, height * 0.18f);
+    textSize(24);
+    fill(170);
+    text("RigidBody Physics Engine", width * 0.5f, height * 0.18f + 62);
 
     // Separator
     stroke(80);
-    strokeWeight(1);
-    line(width * 0.25f, height * 0.20f + 85, width * 0.75f, height * 0.20f + 85);
+    strokeWeight(1.5f);
+    line(width * 0.22f, height * 0.18f + 105, width * 0.78f, height * 0.18f + 105);
     noStroke();
 
     // Buttons
@@ -237,10 +242,10 @@ void drawMainMenu() {
     btnQuit.draw();
 
     // Footer
-    textSize(12);
-    fill(80);
+    textSize(16);
+    fill(100);
     textAlign(CENTER, BOTTOM);
-    text("8INF935 — Simulation physique", width * 0.5f, height - 15);
+    text("8INF935 — Simulation physique", width * 0.5f, height - 18);
 }
 
 void handleMainMenuClick() {
@@ -271,51 +276,56 @@ void initModelViewer() {
     float cx = width  * 0.5f;
     float cy = height * 0.5f;
 
-    // 1. TriangleBody
+    // Proportional spacing & uniform scale relative to 1024x768 baseline
+    float offX = width  * 0.23f;
+    float offY = height * 0.16f;
+    float s    = min(width / 1024.0f, height / 768.0f);
+
+    // 1. TriangleBody (top-left)
     TriangleBody triangle = new TriangleBody(
-        new Point3D(cx - 240, cy - 90, 0),
+        new Point3D(cx - offX, cy - offY, 0),
         new Quaternion(new Vector3D(0, 1, 0), 0.3f),
         15.0f,
-        0.0f, -45.0f, 0.0f,
-        -45.0f, 35.0f, 0.0f,
-        45.0f, 35.0f, 0.0f,
+        0.0f, -45.0f * s, 0.0f,
+        -45.0f * s, 35.0f * s, 0.0f,
+        45.0f * s, 35.0f * s, 0.0f,
         4.0f, 1.0f, 1.0f
     );
     bodies.add(triangle);
 
-    // 2. SquareBody
+    // 2. SquareBody (top-right)
     SquareBody boxBody = new SquareBody(
-        new Point3D(cx + 220, cy - 90, 0),
+        new Point3D(cx + offX, cy - offY, 0),
         new Quaternion(new Vector3D(1, 1, 0), 0.5f),
         20.0f,
-        75.0f, 55.0f, 55.0f,
+        75.0f * s, 55.0f * s, 55.0f * s,
         new Vector3D(0.7f, 0.0f, 0.0f)
     );
     bodies.add(boxBody);
 
-    // 3. cylenderBody
+    // 3. cylenderBody (bottom-left)
     cylenderBody cylinder = new cylenderBody(
-        new Point3D(cx - 220, cy + 120, 0),
+        new Point3D(cx - offX, cy + offY, 0),
         new Quaternion(new Vector3D(1, 0, 0.3f), 0.4f),
         25.0f,
-        32.0f, 85.0f,
+        32.0f * s, 85.0f * s,
         1.0f, 6.0f, 2.0f
     );
     bodies.add(cylinder);
 
-    // 4. GraphBody
+    // 4. GraphBody (bottom-right)
     GraphShapePattern[] patterns = GraphShapePattern.values();
     graphBody = new GraphBody(
-        new Point3D(cx + 210, cy + 120, 0),
+        new Point3D(cx + offX, cy + offY, 0),
         new Quaternion(new Vector3D(0, 1, 0), 0.2f),
         30.0f,
         24,
         patterns[currentPatternIndex],
-        45.0f,
+        45.0f * s,
         0.12f,
         new Vector3D(0.0f, 1.2f, 0.0f)
     );
-    graphBody.nodeHitRadius = 8.0f;
+    graphBody.nodeHitRadius = 8.0f * s;
     bodies.add(graphBody);
 
     for (RigidBody body : bodies) {
@@ -325,7 +335,6 @@ void initModelViewer() {
 }
 
 void drawModelViewer() {
-    // Fixed-timestep physics
     long now = System.nanoTime();
     float frameTime = min((now - lastTimeNs) / 1.0e9f, PhysicsConstants.MAX_FRAME_TIME);
     lastTimeNs = now;
@@ -375,7 +384,6 @@ void drawModelViewer() {
 }
 
 void handleModelViewerClick() {
-    // Back button (2D — test before 3D ray)
     if (btnViewerBack.isOver()) {
         goToMainMenu();
         return;
@@ -417,26 +425,46 @@ void drawModelViewerHUD() {
     camera();
     noLights();
 
+    float uiScale = max(1.0f, height / 768.0f);
+    float s       = min(width / 1024.0f, height / 768.0f);
+    float offX    = width  * 0.23f;
+    float offY    = height * 0.16f;
+    float pad     = 20.0f * uiScale;
+
     fill(240);
-    textSize(13);
+    textSize(16 * uiScale);
     textAlign(LEFT, TOP);
-    text("Controls: [Left Click] Shoot Ray   [SPACE] Pause/Rotate   [G] Cycle Graph   [R] Clear   [ESC] Menu", 15, 15);
-    text("Status: " + lastHitInfo + "   |   Total Hits: " + hitDots.size(), 15, 35);
-    text("[I] Integrator: " + currentIntegrationMode.name() + "   |   A hit gives an impulse at the hit point", 15, 55);
+    text("Controls: [Left Click] Shoot Ray   [SPACE] Pause/Rotate   [G] Cycle Graph   [R] Clear   [ESC] Menu",
+         pad, pad);
+    text("Status: " + lastHitInfo + "   |   Total Hits: " + hitDots.size(),
+         pad, pad + 26 * uiScale);
+    text("[I] Integrator: " + currentIntegrationMode.name() + "   |   A hit gives an impulse at the hit point",
+         pad, pad + 52 * uiScale);
 
+    // Shape labels anchored directly above/below each scaled body
     textAlign(CENTER, TOP);
-    fill(180);
-    text("TriangleBody (Uneven)",         width * 0.5f - 240, height * 0.5f - 165);
-    text("SquareBody (Biased)",           width * 0.5f + 220, height * 0.5f - 165);
-    text("cylenderBody (Bottom-Heavy)",   width * 0.5f - 220, height * 0.5f + 195);
+    textSize(16 * uiScale);
+    fill(200);
+    text("TriangleBody (Uneven)",
+         width * 0.5f - offX, height * 0.5f - offY - 95 * s);
+    text("SquareBody (Biased)",
+         width * 0.5f + offX, height * 0.5f - offY - 95 * s);
+    text("cylenderBody (Bottom-Heavy)",
+         width * 0.5f - offX, height * 0.5f + offY + 95 * s);
     text("GraphBody (" + graphBody.shapePattern + ", n=" + graphBody.nodeCount + ")",
-         width * 0.5f + 210, height * 0.5f + 195);
+         width * 0.5f + offX, height * 0.5f + offY + 95 * s);
 
-    // Weight gradient legend
+    // Weight gradient legend (bottom-left)
+    float legendY = height - 30 * uiScale;
     textAlign(LEFT, CENTER);
+    textSize(16 * uiScale);
     fill(220);
-    text("%TotalWeight:", 15, height - 22);
-    int barX = 115, barY = height - 28, barW = 150, barH = 12;
+    text("%TotalWeight:", pad, legendY);
+
+    int barX = int(pad + 125 * uiScale);
+    int barY = int(legendY - 8 * uiScale);
+    int barW = int(180 * uiScale);
+    int barH = int(16 * uiScale);
     for (int i = 0; i < barW; i++) {
         float t = (float)i / barW;
         int c = (t < 0.5f)
@@ -446,18 +474,21 @@ void drawModelViewerHUD() {
         line(barX + i, barY, barX + i, barY + barH);
     }
     noStroke();
-    fill(180);
+    fill(190);
     text("Low          Avg          High    |    Yellow/Magenta Crosshair = Center of Mass",
-         barX + barW + 10, height - 22);
+         barX + barW + 14 * uiScale, legendY);
 
-    // Back button
-    btnViewerBack.setBounds(width - 155, 12, 145, 34);
+    // Scaled Back button (top-right)
+    float btnW = 180 * uiScale;
+    float btnH = 46 * uiScale;
+    btnViewerBack.fontSize = 18 * uiScale;
+    btnViewerBack.setBounds(width - btnW - pad, pad, btnW, btnH);
     btnViewerBack.draw();
 
     hint(ENABLE_DEPTH_TEST);
 }
 
-// ── Ray shooter (unchanged logic) ────────────────────────────────────
+// ── Ray shooter ──────────────────────────────────────────────────────
 void shootRayFromMouse(float mx, float my) {
     Point3D rayOrigin = new Point3D(camX, camY, camZ);
 
@@ -512,26 +543,29 @@ void shootRayFromMouse(float mx, float my) {
 // ==========================================
 //  GAME  — Spin Challenge
 // ==========================================
-// Objects fall one at a time from above.  The player shoots them off-centre
-// to make them spin.  The score for each body is its peak angular-velocity
-// magnitude (rad-ish/s in physics-pixel units) while it was in play.
-// Final score = sum of the 5 peak angular velocities.
-
 final int   TOTAL_BODIES = 5;        // triangle, box, cylinder, graph A, graph B
 final float GAME_KICK    = 100.0f;   // impulse magnitude on hit
 final float GAME_GRAVITY = 180.0f;   // px/s² downward
 
-// Dynamic arena sizing functions that scale with window size
+// Dynamic arena sizing functions that scale with window size (adjusted for larger HUD)
 float getGroundY() {
-    return height - 60.0f;
+    return height - 70.0f;
 }
 
 float getSkyY() {
-    return 100.0f;
+    return 145.0f;
+}
+
+float getCeilingY() {
+    return 95.0f;
 }
 
 float getArenaHalfWidth() {
-    return min(width * 0.38f, width * 0.5f - 210.0f);
+    return min(width * 0.36f, width * 0.5f - 250.0f);
+}
+
+float getArenaHalfDepth() {
+    return getArenaHalfWidth();
 }
 
 // ── Game state ────────────────────────────────────────────────────────
@@ -539,23 +573,25 @@ ArrayList<RigidBody> gameBodies;
 ForceRegistry        gameRegistry;
 GravityGenerator     gameGravity;
 
-int     gameBodyIndex  = 0;      // 0-4, which body is live
+int     gameBodyIndex  = 0;
 boolean gameBodyAlive  = false;
 float   gameTimeAccum  = 0.0f;
 long    gameLastTimeNs = 0;
 
-// Per-body peak angular speed and accumulated final score
-float[] gamePeakOmega  = new float[TOTAL_BODIES];  // rad/s peak per body
-float   gameFinalScore = 0.0f;                      // sum shown on end screen
-
-// Live tracking for the current body
+// Time and spin tracking
+float   gameTotalTime    = 0.0f;
+float   gameCurBodyTime  = 0.0f;
+float[] gameBodyTime     = new float[TOTAL_BODIES];
+float[] gamePeakOmega    = new float[TOTAL_BODIES];
 float   gameCurPeakOmega = 0.0f;
+float   gameSpinScore    = 0.0f;
+float   gameTimeScore    = 0.0f;
+float   gameFinalScore   = 0.0f;
 
-// Ray feedback & impact markings (only keep last impact point)
-Point3D gameRayStart = null;
-Point3D gameRayEnd   = null;
-Point3D gameLastHit  = null;
-String  gameHitInfo  = "Shoot the edge of the object to make it spin!";
+// Impact point pinned to body local coordinates + trail
+Point3D            gameLastHitLocal = null;
+ArrayList<Point3D> impactTrail      = new ArrayList<Point3D>();
+String             gameHitInfo      = "Shoot the edge of the object to make it spin!";
 
 // Trail tracking for Center of Mass and Furthest Vertex
 ArrayList<Point3D> comTrail    = new ArrayList<Point3D>();
@@ -569,14 +605,38 @@ float gameTgtX, gameTgtY, gameTgtZ;
 float gameYaw   = 0.42f;
 float gamePitch = 0.28f;
 
-// WASD player movement keys
-boolean keyW = false;
-boolean keyA = false;
-boolean keyS = false;
-boolean keyD = false;
+// WASD + 3D movement keys
+boolean keyW     = false;
+boolean keyA     = false;
+boolean keyS     = false;
+boolean keyD     = false;
+boolean keySpace = false;
+boolean keyShift = false;
 
 // Body labels for HUD
 String[] bodyLabels = { "Triangle", "Box", "Cylinder", "Graph A", "Graph B" };
+
+// Convert a world-space point on the body into its local-space coordinates
+// Uses the body's model-to-world matrix basis vectors (inverse rotation = transpose)
+Point3D worldToLocal(RigidBody body, Point3D worldPt) {
+    Matrix4 m = body.getRotationMatrix();
+    Point3D originWorld = m.transform(new Point3D(0, 0, 0));
+    Point3D xAxisWorld  = m.transform(new Point3D(1, 0, 0));
+    Point3D yAxisWorld  = m.transform(new Point3D(0, 1, 0));
+    Point3D zAxisWorld  = m.transform(new Point3D(0, 0, 1));
+
+    Vector3D rel = worldPt.sub(originWorld);
+    Vector3D ax  = xAxisWorld.sub(originWorld);
+    Vector3D ay  = yAxisWorld.sub(originWorld);
+    Vector3D az  = zAxisWorld.sub(originWorld);
+
+    return new Point3D(rel.dot(ax), rel.dot(ay), rel.dot(az));
+}
+
+// Convert a local-space point on the body back into world-space coordinates
+Point3D localToWorld(RigidBody body, Point3D localPt) {
+    return body.getRotationMatrix().transform(localPt);
+}
 
 // Helper to determine the local vertex furthest away from the center of mass
 Point3D getFurthestLocalVertex(RigidBody body) {
@@ -650,15 +710,21 @@ void initGame() {
     gameBodyIndex    = 0;
     gameBodyAlive    = false;
     gameTimeAccum    = 0.0f;
+    gameTotalTime    = 0.0f;
+    gameCurBodyTime  = 0.0f;
     gameFinalScore   = 0.0f;
+    gameSpinScore    = 0.0f;
+    gameTimeScore    = 0.0f;
     gameCurPeakOmega = 0.0f;
-    for (int i = 0; i < TOTAL_BODIES; i++) gamePeakOmega[i] = 0.0f;
+    for (int i = 0; i < TOTAL_BODIES; i++) {
+        gamePeakOmega[i] = 0.0f;
+        gameBodyTime[i]  = 0.0f;
+    }
 
-    keyW = false; keyA = false; keyS = false; keyD = false;
+    keyW = false; keyA = false; keyS = false; keyD = false; keySpace = false; keyShift = false;
 
-    gameRayStart     = null;
-    gameRayEnd       = null;
-    gameLastHit      = null;
+    gameLastHitLocal = null;
+    impactTrail.clear();
     comTrail.clear();
     vertexTrail.clear();
     curFurthestLocal = null;
@@ -669,29 +735,39 @@ void initGame() {
     spawnNextGameBody();
 }
 
-// Proper 3D camera: positioned at an angle looking at the arena center
+void computeFinalScore() {
+    float totalSpin = 0.0f;
+    float totalTime = 0.0f;
+    for (int i = 0; i < TOTAL_BODIES; i++) {
+        totalSpin += gamePeakOmega[i];
+        totalTime += gameBodyTime[i];
+    }
+    gameSpinScore  = totalSpin * 20.0f;
+    gameTimeScore  = totalTime * 50.0f;
+    gameFinalScore = gameSpinScore + gameTimeScore;
+}
+
 void setupGameCamera() {
-    float camDist = (height * 0.5f) / tan(PI / 6.0f);
-    gameCamDist   = camDist * 1.05f;
+    float cx   = width  * 0.5f;
+    float hd   = getArenaHalfDepth();
+    float gndY = getGroundY();
 
-    float spawnCenterX = width  * 0.5f;
-    float spawnCenterY = height * 0.52f;
-    float spawnCenterZ = 0.0f;
+    gameCamDist = hd * 1.5f;
 
-    // Default angle: yaw ~20 deg, pitch ~16 deg looking down
-    gameYaw   = 0.35f;
-    gamePitch = 0.28f;
+    gameYaw   = 0.0f;
+    gamePitch = -0.12f;
+
+    float pad = 40.0f;
+    gameCX = cx;
+    gameCY = gndY - 120.0f;
+    gameCZ = hd - pad - 20.0f;
+
     float cosP = cos(gamePitch);
-
     Vector3D forward = new Vector3D(
         sin(gameYaw) * cosP,
         sin(gamePitch),
         -cos(gameYaw) * cosP
     ).normalized();
-
-    gameCX = spawnCenterX - forward.getX() * gameCamDist;
-    gameCY = spawnCenterY - forward.getY() * gameCamDist;
-    gameCZ = spawnCenterZ - forward.getZ() * gameCamDist;
 
     gameTgtX = gameCX + forward.getX() * 500.0f;
     gameTgtY = gameCY + forward.getY() * 500.0f;
@@ -702,8 +778,14 @@ void setupGameCamera() {
 void spawnNextGameBody() {
     if (gameBodyIndex >= TOTAL_BODIES) return;
 
+    gameCurPeakOmega = 0.0f;
+    gameCurBodyTime  = 0.0f;
+    comTrail.clear();
+    vertexTrail.clear();
+    impactTrail.clear();
+
     float cx = width  * 0.5f;
-    float cy = getSkyY();               // spawn at the top of the scaled arena
+    float cy = getSkyY();
 
     Quaternion q = new Quaternion(
         new Vector3D(random(-1,1), random(-1,1), random(-1,1)).normalized(),
@@ -736,8 +818,6 @@ void spawnNextGameBody() {
         }
     }
 
-    // Low linear damping so the body keeps falling; moderate angular damping
-    // so hard-won spin decays slowly and the peak stays meaningful.
     body.setLinearDamping(0.02f);
     body.setAngularDamping(0.97f);
 
@@ -748,25 +828,24 @@ void spawnNextGameBody() {
     gameBodyAlive    = true;
     gameTimeAccum    = 0.0f;
     gameCurPeakOmega = 0.0f;
-    gameLastHit      = null;
-    gameRayStart     = null;
-    gameRayEnd       = null;
+    gameLastHitLocal = null;
 
-    // Reset trails and track the furthest local vertex
     comTrail.clear();
     vertexTrail.clear();
+    impactTrail.clear();
     curFurthestLocal = getFurthestLocalVertex(body);
 }
 
 // ─────────────────────────────────────────────────────────────────────
 void drawGame() {
-    // ── Physics tick ────────────────────────────────────────────────
     long now = System.nanoTime();
     float frameTime = min((now - gameLastTimeNs) / 1.0e9f, PhysicsConstants.MAX_FRAME_TIME);
     gameLastTimeNs = now;
 
     if (gameBodyAlive && !gameBodies.isEmpty()) {
-        gameTimeAccum += frameTime;
+        gameTimeAccum   += frameTime;
+        gameTotalTime   += frameTime;
+        gameCurBodyTime += frameTime;
 
         while (gameTimeAccum >= PhysicsConstants.FIXED_TIMESTEP) {
             integrateStep(gameBodies, gameRegistry,
@@ -776,32 +855,70 @@ void drawGame() {
 
         RigidBody active = gameBodies.get(0);
 
-        // Track peak angular speed for this body
         float omega = active.getAngularVelocity().length();
         if (omega > gameCurPeakOmega) gameCurPeakOmega = omega;
 
-        // Record 3D path of Center of Mass and Furthest Vertex
+        // 1. Record 3D path of Center of Mass (Cyan)
         Point3D comWorld = active.getPosition();
-        Point3D vtxWorld = (curFurthestLocal != null)
-            ? active.getRotationMatrix().transform(curFurthestLocal) : comWorld;
-
         if (comTrail.isEmpty() || comWorld.distanceSquaredTo(comTrail.get(comTrail.size() - 1)) > 4.0f) {
             comTrail.add(new Point3D(comWorld.getX(), comWorld.getY(), comWorld.getZ()));
         }
+
+        // 2. Record 3D path of Furthest Vertex (Pink / Magenta)
+        Point3D vtxWorld = (curFurthestLocal != null)
+            ? localToWorld(active, curFurthestLocal) : comWorld;
         if (vertexTrail.isEmpty() || vtxWorld.distanceSquaredTo(vertexTrail.get(vertexTrail.size() - 1)) > 4.0f) {
             vertexTrail.add(new Point3D(vtxWorld.getX(), vtxWorld.getY(), vtxWorld.getZ()));
         }
 
-        // Ground detection → record peak, advance to next body
-        if (active.getPosition().getY() > getGroundY()) {
+        // 3. Record 3D path of the pinned Impact Point (Green)
+        if (gameLastHitLocal != null) {
+            Point3D impactWorld = localToWorld(active, gameLastHitLocal);
+            if (impactTrail.isEmpty() || impactWorld.distanceSquaredTo(impactTrail.get(impactTrail.size() - 1)) > 4.0f) {
+                impactTrail.add(new Point3D(impactWorld.getX(), impactWorld.getY(), impactWorld.getZ()));
+            }
+        }
+
+        // Detection: any face of the arena destroys the body
+        Point3D pos = active.getPosition();
+        float cx    = width * 0.5f;
+        float hw    = getArenaHalfWidth();
+        float hd    = getArenaHalfDepth();
+        float gndY  = getGroundY();
+        float ceilY = getCeilingY();
+
+        boolean destroyed = false;
+        String faceHit = "";
+
+        if (pos.getY() >= gndY) {
+            destroyed = true;
+            faceHit = "Floor Impact!";
+        } else if (pos.getY() <= ceilY) {
+            destroyed = true;
+            faceHit = "Ceiling Impact!";
+        } else if (pos.getX() <= cx - hw) {
+            destroyed = true;
+            faceHit = "Left Wall Impact!";
+        } else if (pos.getX() >= cx + hw) {
+            destroyed = true;
+            faceHit = "Right Wall Impact!";
+        } else if (pos.getZ() <= -hd) {
+            destroyed = true;
+            faceHit = "Back Wall Impact!";
+        } else if (pos.getZ() >= hd) {
+            destroyed = true;
+            faceHit = "Front Wall Impact!";
+        }
+
+        if (destroyed) {
             gamePeakOmega[gameBodyIndex] = gameCurPeakOmega;
+            gameBodyTime[gameBodyIndex]  = gameCurBodyTime;
+            gameHitInfo = active.getClass().getSimpleName() + " destroyed: " + faceHit;
             gameBodyAlive = false;
             gameBodyIndex++;
 
             if (gameBodyIndex >= TOTAL_BODIES) {
-                // Compute final score
-                gameFinalScore = 0;
-                for (float v : gamePeakOmega) gameFinalScore += v;
+                computeFinalScore();
                 gameBodies.clear();
                 gameRegistry.clear();
                 goToEndScreen();
@@ -813,13 +930,6 @@ void drawGame() {
 
     // ── Update Camera & Player Movement ─────────────────────────────
     float moveSpeed = 480.0f * frameTime;
-    Vector3D moveFwd   = new Vector3D(sin(gameYaw), 0, -cos(gameYaw)).normalized();
-    Vector3D moveRight = new Vector3D(cos(gameYaw), 0,  sin(gameYaw)).normalized();
-
-    if (keyW) { gameCX += moveFwd.getX()   * moveSpeed; gameCZ += moveFwd.getZ()   * moveSpeed; }
-    if (keyS) { gameCX -= moveFwd.getX()   * moveSpeed; gameCZ -= moveFwd.getZ()   * moveSpeed; }
-    if (keyA) { gameCX -= moveRight.getX() * moveSpeed; gameCZ -= moveRight.getZ() * moveSpeed; }
-    if (keyD) { gameCX += moveRight.getX() * moveSpeed; gameCZ += moveRight.getZ() * moveSpeed; }
 
     float cosP = cos(gamePitch);
     Vector3D forward = new Vector3D(
@@ -827,6 +937,39 @@ void drawGame() {
         sin(gamePitch),
         -cos(gameYaw) * cosP
     ).normalized();
+    Vector3D moveRight = new Vector3D(cos(gameYaw), 0,  sin(gameYaw)).normalized();
+
+    if (keyW) {
+        gameCX += forward.getX() * moveSpeed;
+        gameCY += forward.getY() * moveSpeed;
+        gameCZ += forward.getZ() * moveSpeed;
+    }
+    if (keyS) {
+        gameCX -= forward.getX() * moveSpeed;
+        gameCY -= forward.getY() * moveSpeed;
+        gameCZ -= forward.getZ() * moveSpeed;
+    }
+    if (keyA) {
+        gameCX -= moveRight.getX() * moveSpeed;
+        gameCZ -= moveRight.getZ() * moveSpeed;
+    }
+    if (keyD) {
+        gameCX += moveRight.getX() * moveSpeed;
+        gameCZ += moveRight.getZ() * moveSpeed;
+    }
+    if (keySpace) gameCY -= moveSpeed;
+    if (keyShift) gameCY += moveSpeed;
+
+    float pad   = 30.0f;
+    float cx    = width * 0.5f;
+    float hw    = getArenaHalfWidth();
+    float hd    = getArenaHalfDepth();
+    float gndY  = getGroundY();
+    float ceilY = getCeilingY();
+
+    gameCX = constrain(gameCX, cx - hw + pad, cx + hw - pad);
+    gameCY = constrain(gameCY, ceilY + pad,   gndY - pad);
+    gameCZ = constrain(gameCZ, -hd + pad,      hd - pad);
 
     gameTgtX = gameCX + forward.getX() * 500.0f;
     gameTgtY = gameCY + forward.getY() * 500.0f;
@@ -865,31 +1008,36 @@ void drawGame() {
         endShape();
     }
 
-    // 3. Highlight current tracked furthest vertex on the active body
+    // 3. Impact Point trail (Green)
+    if (impactTrail.size() > 1) {
+        noFill();
+        stroke(50, 255, 100, 230);
+        strokeWeight(2.5f);
+        beginShape();
+        for (Point3D p : impactTrail) {
+            vertex(p.getX(), p.getY(), p.getZ());
+        }
+        endShape();
+    }
+
+    // 4. Highlight current tracked furthest vertex on the active body
     if (curFurthestLocal != null && !gameBodies.isEmpty()) {
-        Point3D curVtx = gameBodies.get(0).getRotationMatrix().transform(curFurthestLocal);
+        Point3D curVtx = localToWorld(gameBodies.get(0), curFurthestLocal);
         pushMatrix();
         translate(curVtx.getX(), curVtx.getY(), curVtx.getZ());
         noStroke();
         fill(255, 60, 180);
-        sphere(4.0f);
+        sphere(4.5f);
         popMatrix();
     }
 
-    // 4. Trace projectile ray
-    if (gameRayStart != null && gameRayEnd != null) {
-        stroke(255, 230, 80, 200);
-        strokeWeight(2.5f);
-        line(gameRayStart.getX(), gameRayStart.getY(), gameRayStart.getZ(),
-             gameRayEnd.getX(),   gameRayEnd.getY(),   gameRayEnd.getZ());
-    }
-
-    // 5. Mark ONLY the last impact point
-    if (gameLastHit != null) {
+    // 5. Mark the impact point pinned directly onto the moving/rotating body
+    if (gameLastHitLocal != null && !gameBodies.isEmpty()) {
+        Point3D currentHitWorld = localToWorld(gameBodies.get(0), gameLastHitLocal);
         pushMatrix();
-        translate(gameLastHit.getX(), gameLastHit.getY(), gameLastHit.getZ());
+        translate(currentHitWorld.getX(), currentHitWorld.getY(), currentHitWorld.getZ());
         noStroke();
-        fill(50, 255, 100, 230);
+        fill(50, 255, 100, 240);
         sphereDetail(16);
         sphere(6.5f);
 
@@ -903,62 +1051,163 @@ void drawGame() {
     drawGameHUD();
 }
 
-// Proper 3D arena: 3D floor platform on the XZ plane with grid depth cues
+// Proper 3D arena
 void drawGameArena() {
     float cx    = width  * 0.5f;
-    float gndY  = getGroundY();          // ground Y in world
-    float skyY  = getSkyY();             // spawn line Y
-    float hw    = getArenaHalfWidth();   // half-width along X
-    float halfD = hw * 0.75f;            // half-depth along Z
+    float gndY  = getGroundY();
+    float ceilY = getCeilingY();
+    float skyY  = getSkyY();
+    float hw    = getArenaHalfWidth();
+    float hd    = getArenaHalfDepth();
 
-    // 3D floor platform (semi-transparent)
+    float minX = cx - hw, maxX = cx + hw;
+    float minZ = -hd,     maxZ = hd;
+
+    // 1. Floor Platform
     noStroke();
-    fill(20, 45, 30, 170);
+    fill(12, 35, 45, 170);
     beginShape();
-    vertex(cx - hw, gndY, -halfD);
-    vertex(cx + hw, gndY, -halfD);
-    vertex(cx + hw, gndY,  halfD);
-    vertex(cx - hw, gndY,  halfD);
+    vertex(minX, gndY, minZ);
+    vertex(maxX, gndY, minZ);
+    vertex(maxX, gndY, maxZ);
+    vertex(minX, gndY, maxZ);
     endShape(CLOSE);
 
-    // 3D grid lines on the ground for depth perception
-    stroke(45, 95, 60, 140);
+    stroke(0, 220, 160, 130);
     strokeWeight(1);
-    for (float x = cx - hw; x <= cx + hw + 1; x += hw * 0.25f) {
-        line(x, gndY, -halfD, x, gndY, halfD);
+    for (float x = minX; x <= maxX + 1; x += hw * 0.25f) {
+        line(x, gndY, minZ, x, gndY, maxZ);
     }
-    for (float z = -halfD; z <= halfD + 1; z += halfD * 0.33f) {
-        line(cx - hw, gndY, z, cx + hw, gndY, z);
+    for (float z = minZ; z <= maxZ + 1; z += hd * 0.25f) {
+        line(minX, gndY, z, maxX, gndY, z);
     }
 
-    // Glowing ground perimeter border
-    stroke(80, 215, 90, 230);
+    // 2. Ceiling Platform
+    noStroke();
+    fill(15, 25, 45, 120);
+    beginShape();
+    vertex(minX, ceilY, minZ);
+    vertex(maxX, ceilY, minZ);
+    vertex(maxX, ceilY, maxZ);
+    vertex(minX, ceilY, maxZ);
+    endShape(CLOSE);
+
+    stroke(70, 130, 240, 100);
+    strokeWeight(1);
+    for (float x = minX; x <= maxX + 1; x += hw * 0.25f) {
+        line(x, ceilY, minZ, x, ceilY, maxZ);
+    }
+    for (float z = minZ; z <= maxZ + 1; z += hd * 0.25f) {
+        line(minX, ceilY, z, maxX, ceilY, z);
+    }
+
+    // 3. Back Wall
+    noStroke();
+    fill(10, 32, 60, 110);
+    beginShape();
+    vertex(minX, ceilY, minZ);
+    vertex(maxX, ceilY, minZ);
+    vertex(maxX, gndY,  minZ);
+    vertex(minX, gndY,  minZ);
+    endShape(CLOSE);
+
+    stroke(0, 180, 255, 110);
+    strokeWeight(1);
+    for (float x = minX; x <= maxX + 1; x += hw * 0.25f) {
+        line(x, ceilY, minZ, x, gndY, minZ);
+    }
+    for (float y = ceilY; y <= gndY + 1; y += (gndY - ceilY) * 0.25f) {
+        line(minX, y, minZ, maxX, y, minZ);
+    }
+
+    // 4. Left Wall
+    noStroke();
+    fill(10, 28, 55, 100);
+    beginShape();
+    vertex(minX, ceilY, minZ);
+    vertex(minX, ceilY, maxZ);
+    vertex(minX, gndY,  maxZ);
+    vertex(minX, gndY,  minZ);
+    endShape(CLOSE);
+
+    stroke(0, 180, 255, 100);
+    strokeWeight(1);
+    for (float z = minZ; z <= maxZ + 1; z += hd * 0.25f) {
+        line(minX, ceilY, z, minX, gndY, z);
+    }
+    for (float y = ceilY; y <= gndY + 1; y += (gndY - ceilY) * 0.25f) {
+        line(minX, y, minZ, minX, y, maxZ);
+    }
+
+    // 5. Right Wall
+    noStroke();
+    fill(10, 28, 55, 100);
+    beginShape();
+    vertex(maxX, ceilY, minZ);
+    vertex(maxX, ceilY, maxZ);
+    vertex(maxX, gndY,  maxZ);
+    vertex(maxX, gndY,  minZ);
+    endShape(CLOSE);
+
+    stroke(0, 180, 255, 100);
+    strokeWeight(1);
+    for (float z = minZ; z <= maxZ + 1; z += hd * 0.25f) {
+        line(maxX, ceilY, z, maxX, gndY, z);
+    }
+    for (float y = ceilY; y <= gndY + 1; y += (gndY - ceilY) * 0.25f) {
+        line(maxX, y, minZ, maxX, y, maxZ);
+    }
+
+    // 6. Front Wall
+    noStroke();
+    fill(10, 25, 48, 85);
+    beginShape();
+    vertex(minX, ceilY, maxZ);
+    vertex(maxX, ceilY, maxZ);
+    vertex(maxX, gndY,  maxZ);
+    vertex(minX, gndY,  maxZ);
+    endShape(CLOSE);
+
+    stroke(0, 170, 240, 85);
+    strokeWeight(1);
+    for (float x = minX; x <= maxX + 1; x += hw * 0.25f) {
+        line(x, ceilY, maxZ, x, gndY, maxZ);
+    }
+    for (float y = ceilY; y <= gndY + 1; y += (gndY - ceilY) * 0.25f) {
+        line(minX, y, maxZ, maxX, y, maxZ);
+    }
+
+    // 7. Glowing 3D Bounding Box Edges & Pillars
+    stroke(0, 255, 200, 220);
     strokeWeight(2.5f);
-    noFill();
-    beginShape();
-    vertex(cx - hw, gndY, -halfD);
-    vertex(cx + hw, gndY, -halfD);
-    vertex(cx + hw, gndY,  halfD);
-    vertex(cx - hw, gndY,  halfD);
-    endShape(CLOSE);
+    line(minX, ceilY, minZ, minX, gndY, minZ);
+    line(maxX, ceilY, minZ, maxX, gndY, minZ);
+    line(maxX, ceilY, maxZ, maxX, gndY, maxZ);
+    line(minX, ceilY, maxZ, minX, gndY, maxZ);
 
-    // 4 vertical corner guide pillars
-    stroke(50, 120, 70, 90);
-    strokeWeight(1);
-    line(cx - hw, skyY, -halfD,  cx - hw, gndY, -halfD);
-    line(cx + hw, skyY, -halfD,  cx + hw, gndY, -halfD);
-    line(cx + hw, skyY,  halfD,  cx + hw, gndY,  halfD);
-    line(cx - hw, skyY,  halfD,  cx - hw, gndY,  halfD);
+    stroke(0, 255, 180, 240);
+    strokeWeight(2.5f);
+    line(minX, gndY, minZ, maxX, gndY, minZ);
+    line(maxX, gndY, minZ, maxX, gndY, maxZ);
+    line(maxX, gndY, maxZ, minX, gndY, maxZ);
+    line(minX, gndY, maxZ, minX, gndY, minZ);
 
-    // Spawn ceiling dashed border
-    stroke(80, 140, 220, 110);
+    stroke(80, 180, 255, 200);
+    strokeWeight(2.0f);
+    line(minX, ceilY, minZ, maxX, ceilY, minZ);
+    line(maxX, ceilY, minZ, maxX, ceilY, maxZ);
+    line(maxX, ceilY, maxZ, minX, ceilY, maxZ);
+    line(minX, ceilY, maxZ, minX, ceilY, minZ);
+
+    // Spawn plane dashed guide
+    stroke(100, 180, 255, 120);
     strokeWeight(1);
-    for (float x = cx - hw; x < cx + hw; x += 30) {
-        line(x, skyY, 0, min(x + 15, cx + hw), skyY, 0);
+    for (float x = minX; x < maxX; x += 30) {
+        line(x, skyY, 0, min(x + 15, maxX), skyY, 0);
     }
 }
 
-// ── HUD ───────────────────────────────────────────────────────────────
+// ── HUD (Scaled Up) ───────────────────────────────────────────────────
 void drawGameHUD() {
     hint(DISABLE_DEPTH_TEST);
     camera();
@@ -966,99 +1215,118 @@ void drawGameHUD() {
 
     // ── Top bar ──────────────────────────────────────────────────
     noStroke();
-    fill(0, 0, 0, 170);
-    rect(0, 0, width, 88);
+    fill(0, 0, 0, 185);
+    rect(0, 0, width, 114);
 
     // Body label & index
     fill(255);
-    textSize(14);
+    textSize(19);
     textAlign(LEFT, TOP);
     text("Body " + (gameBodyIndex + 1) + " / " + TOTAL_BODIES
        + "  —  " + (gameBodyIndex < TOTAL_BODIES ? bodyLabels[gameBodyIndex] : "Done"),
-       15, 10);
+       18, 12);
+    fill(140, 220, 255);
+    textSize(16);
+    text("Alive: " + nf(gameCurBodyTime, 1, 1) + "s", 18, 38);
 
     // Current peak omega (live)
     textAlign(CENTER, TOP);
-    textSize(20);
+    textSize(26);
     fill(255, 220, 80);
     float liveOmega = gameBodyAlive && !gameBodies.isEmpty()
         ? gameBodies.get(0).getAngularVelocity().length() : 0;
     text("ω " + nf(liveOmega, 1, 1) + "  |  peak " + nf(gameCurPeakOmega, 1, 1),
-         width * 0.5f, 8);
+         width * 0.5f, 10);
 
     // Hit feedback
-    textSize(13);
-    fill(160);
-    text(gameHitInfo, width * 0.5f, 36);
+    textSize(16);
+    fill(190);
+    text(gameHitInfo, width * 0.5f, 44);
+
+    // Live total time & live score on the top right
+    float curTotalSpin = 0;
+    for (int i = 0; i < gameBodyIndex; i++) curTotalSpin += gamePeakOmega[i];
+    curTotalSpin += gameCurPeakOmega;
+    float curTotalScore = curTotalSpin * gameTotalTime;
+
+    textAlign(RIGHT, TOP);
+    textSize(17);
+    fill(180, 210, 255);
+    text("Total Time: " + nf(gameTotalTime, 1, 1) + "s", width - 210, 12);
+    textSize(20);
+    fill(255, 220, 80);
+    text("Score: " + int(curTotalScore), width - 210, 36);
 
     // Controls hint & trail legend
-    textSize(12);
-    fill(130);
+    textSize(15);
+    fill(160);
     textAlign(LEFT, TOP);
-    text("[WASD] Move   [Right Click Drag] Look   [Left Click] Shoot   [C] Reset View   [ESC] Menu", 15, 52);
-    text("[Cyan] Path: Center of Mass   [Magenta] Path: Furthest Vertex", 15, 68);
+    text("[W/S] Move   [A/D] Strafe   [Space/Shift] Elevate   [Right Drag] Look   [Left Click] Shoot", 18, 68);
+    text("[Cyan] Center of Mass   [Magenta] Furthest Vertex   [Green] Impact Point   [C] Reset View   [ESC] Menu", 18, 88);
 
-    // ── Score sidebar (right) ─────────────────────────────────────
-    float sbX = width - 175;
-    float sbY = 98;
-    float sbW = 160;
-    float sbH = TOTAL_BODIES * 36 + 36;
+    // ── Score sidebar (right, scaled up) ─────────────────────────
+    float sbW = 225;
+    float sbX = width - sbW - 18;
+    float sbY = 128;
+    float rowH = 38;
+    float sbH = TOTAL_BODIES * rowH + 86;
     noStroke();
-    fill(0, 0, 0, 150);
-    rect(sbX - 8, sbY - 8, sbW + 16, sbH + 16, 6);
+    fill(0, 0, 0, 175);
+    rect(sbX - 10, sbY - 10, sbW + 20, sbH + 20, 8);
 
     textAlign(LEFT, TOP);
-    textSize(12);
-    fill(180);
-    text("PEAK SPIN  (ω/body)", sbX, sbY);
+    textSize(14);
+    fill(190);
+    text("ROUND STATS", sbX, sbY);
+    textAlign(RIGHT, TOP);
+    text("Time | Peak ω", sbX + sbW, sbY);
 
-    float runningSum = 0;
     for (int i = 0; i < TOTAL_BODIES; i++) {
         float v = (i < gameBodyIndex) ? gamePeakOmega[i]
                 : (i == gameBodyIndex) ? gameCurPeakOmega : 0;
-        runningSum += (i < gameBodyIndex) ? gamePeakOmega[i] : 0;
+        float t = (i < gameBodyIndex) ? gameBodyTime[i]
+                : (i == gameBodyIndex) ? gameCurBodyTime : 0;
 
-        textSize(13);
+        textSize(16);
         if (i < gameBodyIndex) {
-            fill(120, 220, 120);     // done
+            fill(120, 220, 120);
         } else if (i == gameBodyIndex) {
-            fill(255, 220, 60);      // current
+            fill(255, 220, 60);
         } else {
-            fill(80, 80, 100);       // upcoming
+            fill(95, 95, 115);
         }
         textAlign(LEFT, TOP);
-        text(bodyLabels[i], sbX, sbY + 24 + i * 34);
+        text(bodyLabels[i], sbX, sbY + 26 + i * rowH);
         textAlign(RIGHT, TOP);
-        text(nf(v, 1, 1), sbX + sbW, sbY + 24 + i * 34);
+        text(nf(t, 1, 1) + "s  " + nf(v, 1, 1), sbX + sbW, sbY + 26 + i * rowH);
     }
 
-    // Running total
-    float totalSoFar = 0;
-    for (int i = 0; i < gameBodyIndex; i++) totalSoFar += gamePeakOmega[i];
-    totalSoFar += gameCurPeakOmega;
+    // Running summary
+    float sumBoxY = sbY + 26 + TOTAL_BODIES * rowH;
     noStroke();
-    fill(60, 60, 60, 180);
-    rect(sbX - 8, sbY + 24 + TOTAL_BODIES*34, sbW + 16, 28, 4);
-    fill(255, 200, 50);
+    fill(45, 55, 75, 210);
+    rect(sbX - 8, sumBoxY, sbW + 16, 56, 6);
+    fill(180, 220, 255);
     textSize(14);
     textAlign(LEFT, TOP);
-    text("TOTAL", sbX, sbY + 28 + TOTAL_BODIES*34);
-    textAlign(RIGHT, TOP);
-    text(nf(totalSoFar, 1, 1), sbX + sbW, sbY + 28 + TOTAL_BODIES*34);
+    text("Time: " + nf(gameTotalTime, 1, 1) + "s   Spin: " + nf(curTotalSpin, 1, 1), sbX, sumBoxY + 6);
+    fill(255, 215, 60);
+    textSize(18);
+    text("SCORE: " + int(curTotalScore), sbX, sumBoxY + 27);
 
-    // ── Progress pips (bottom centre) ────────────────────────────
-    int pipR = 8, pipSpacing = 28;
+    // ── Progress pips (bottom centre, scaled up) ─────────────────
+    int pipR = 11, pipSpacing = 36;
     int pipX = width/2 - (TOTAL_BODIES * pipSpacing)/2 + pipR;
-    int pipY = height - 20;
+    int pipY = height - 26;
     for (int i = 0; i < TOTAL_BODIES; i++) {
         noStroke();
-        if (i < gameBodyIndex)       fill(80, 160, 80);
+        if (i < gameBodyIndex)       fill(80, 180, 80);
         else if (i == gameBodyIndex) fill(255, 200, 50);
-        else                         fill(50, 70, 120);
+        else                         fill(55, 75, 130);
         ellipse(pipX + i * pipSpacing, pipY, pipR*2, pipR*2);
     }
 
-    btnGameBack.setBounds(width - 155, 12, 145, 34);
+    btnGameBack.setBounds(width - 190, 14, 175, 44);
     btnGameBack.draw();
     hint(ENABLE_DEPTH_TEST);
 }
@@ -1076,6 +1344,8 @@ void handleGameKey() {
     if (key == 'a' || key == 'A') keyA = true;
     if (key == 's' || key == 'S') keyS = true;
     if (key == 'd' || key == 'D') keyD = true;
+    if (key == ' ') keySpace = true;
+    if (keyCode == SHIFT) keyShift = true;
     if (key == 'c' || key == 'C') setupGameCamera();
 }
 
@@ -1084,6 +1354,8 @@ void handleGameKeyReleased() {
     if (key == 'a' || key == 'A') keyA = false;
     if (key == 's' || key == 'S') keyS = false;
     if (key == 'd' || key == 'D') keyD = false;
+    if (key == ' ') keySpace = false;
+    if (keyCode == SHIFT) keyShift = false;
 }
 
 void handleGameMouseDragged() {
@@ -1097,12 +1369,10 @@ void handleGameMouseDragged() {
     }
 }
 
-// Shoot a ray from the 3D camera and apply an impulse at the hit point.
-// Hitting off-centre generates torque → spin.
+// Shoot an invisible ray from the 3D camera and apply an impulse at the hit point.
 void gameShootRay(float mx, float my) {
     Point3D rayOrigin = new Point3D(gameCX, gameCY, gameCZ);
 
-    // Camera coordinate frame basis vectors
     Vector3D forward = new Vector3D(gameTgtX - gameCX, gameTgtY - gameCY, gameTgtZ - gameCZ).normalized();
     Vector3D worldUp = new Vector3D(0, 1, 0);
     Vector3D right   = forward.cross(worldUp).normalized();
@@ -1119,10 +1389,6 @@ void gameShootRay(float mx, float my) {
     Vector3D dir = forward.add(right.mult(ndcX * halfW)).add(camUp.mult(ndcY * halfH)).normalized();
     Point3D  rayEnd = rayOrigin.add(dir.mult(gameCamDist * 3.0f));
 
-    gameRayStart = rayOrigin;
-    gameRayEnd   = rayEnd;
-
-    // Find closest hit
     Point3D   closestHit = null;
     RigidBody hitBody    = null;
     float     bestDistSq = Float.MAX_VALUE;
@@ -1140,7 +1406,11 @@ void gameShootRay(float mx, float my) {
     }
 
     if (closestHit != null) {
-        gameLastHit = closestHit;
+        // Pin impact point to the body's local frame and reset its trail
+        gameLastHitLocal = worldToLocal(hitBody, closestHit);
+        impactTrail.clear();
+        impactTrail.add(new Point3D(closestHit.getX(), closestHit.getY(), closestHit.getZ()));
+
         // Apply impulse at hit point → off-centre = torque → spin!
         hitBody.applyImpulseAtPoint(dir.mult(hitBody.getMass() * GAME_KICK), closestHit);
         gameHitInfo = "HIT " + hitBody.getClass().getSimpleName()
@@ -1151,7 +1421,7 @@ void gameShootRay(float mx, float my) {
 }
 
 // ==========================================
-//  END SCREEN
+//  END SCREEN (Scaled Up)
 // ==========================================
 void drawEndScreen() {
     background(18, 12, 28);
@@ -1160,71 +1430,101 @@ void drawEndScreen() {
 
     // Title
     textAlign(CENTER, CENTER);
-    textSize(48);
+    textSize(56);
     fill(255, 80, 180);
-    text("Round Complete!", width * 0.5f, height * 0.16f);
+    text("Round Complete!", width * 0.5f, height * 0.11f);
 
     // Per-body breakdown
-    float colX = width * 0.5f - 110;
-    float tableStartY = height * 0.28f;
-    textSize(15);
-    fill(200);
+    float tableW = 480;
+    float colX = width * 0.5f - tableW * 0.5f;
+    float tableStartY = height * 0.21f;
+    textSize(18);
+    fill(210);
     textAlign(LEFT, CENTER);
     text("Body", colX, tableStartY);
+    textAlign(CENTER, CENTER);
+    text("Time Survived", colX + 170, tableStartY);
+    text("Peak ω", colX + 320, tableStartY);
     textAlign(RIGHT, CENTER);
-    text("Peak ω", colX + 220, tableStartY);
+    text("Points", colX + tableW, tableStartY);
 
-    stroke(80);
-    strokeWeight(1);
-    line(colX - 10, tableStartY + 15, colX + 235, tableStartY + 15);
+    stroke(90);
+    strokeWeight(1.5f);
+    line(colX - 12, tableStartY + 18, colX + tableW + 12, tableStartY + 18);
     noStroke();
 
+    float totalSpin = 0.0f;
+    float totalTime = 0.0f;
     for (int i = 0; i < TOTAL_BODIES; i++) {
-        float rowY = tableStartY + 35 + i * 32;
-        textSize(14);
+        totalSpin += gamePeakOmega[i];
+        totalTime += gameBodyTime[i];
+        float rowY = tableStartY + 44 + i * 36;
+        int bodyPoints = int(gameBodyTime[i] * 50.0f + gamePeakOmega[i] * 20.0f);
+
+        textSize(17);
         fill(160, 220, 160);
         textAlign(LEFT, CENTER);
         text(bodyLabels[i], colX, rowY);
+        textAlign(CENTER, CENTER);
+        text(nf(gameBodyTime[i], 1, 2) + " s", colX + 170, rowY);
+        text(nf(gamePeakOmega[i], 1, 2) + " rad/s", colX + 320, rowY);
         textAlign(RIGHT, CENTER);
-        text(nf(gamePeakOmega[i], 1, 2), colX + 220, rowY);
+        fill(255, 220, 80);
+        text("+" + bodyPoints, colX + tableW, rowY);
     }
 
     // Divider
-    float dividerY = tableStartY + 35 + TOTAL_BODIES * 32 + 5;
-    stroke(80);
-    line(colX - 10, dividerY, colX + 235, dividerY);
+    float dividerY = tableStartY + 44 + TOTAL_BODIES * 36 + 12;
+    stroke(90);
+    line(colX - 12, dividerY, colX + tableW + 12, dividerY);
     noStroke();
 
-    // Total score
-    float scoreY = dividerY + 30;
-    textSize(26);
+    // Summary lines
+    float summaryY = dividerY + 26;
+    textSize(18);
+    fill(180, 220, 255);
+    textAlign(LEFT, CENTER);
+    text("Total Time:", colX, summaryY);
+    textAlign(RIGHT, CENTER);
+    text(nf(totalTime, 1, 2) + " s  (+" + int(gameTimeScore) + " pts)", colX + tableW, summaryY);
+
+    textSize(18);
+    fill(180, 255, 200);
+    textAlign(LEFT, CENTER);
+    text("Total Peak Spin:", colX, summaryY + 30);
+    textAlign(RIGHT, CENTER);
+    text(nf(totalSpin, 1, 2) + " rad/s  (+" + int(gameSpinScore) + " pts)", colX + tableW, summaryY + 30);
+
+    // Total final score
+    float scoreY = summaryY + 80;
+    textSize(34);
     fill(255, 220, 80);
     textAlign(LEFT, CENTER);
-    text("Total Score", colX, scoreY);
+    text("FINAL SCORE", colX, scoreY);
     textAlign(RIGHT, CENTER);
-    text(nf(gameFinalScore, 1, 2), colX + 220, scoreY);
+    text(int(gameFinalScore), colX + tableW, scoreY);
 
-    textSize(13);
-    fill(110);
+    textSize(15);
+    fill(150);
     textAlign(CENTER, CENTER);
-    text("(sum of peak angular velocities)", width * 0.5f, scoreY + 28);
+    text("(Final Score = Total Spin × Total Time)", width * 0.5f, scoreY + 34);
 
-    // Dynamically center buttons
-    float bW = 240, bH = 46;
+    // Dynamically center scaled buttons
+    float bW = 300, bH = 56;
     float bX = width * 0.5f - bW * 0.5f;
-    float btnStartY = scoreY + 58;
+    float btnStartY = scoreY + 64;
     btnEndReplay.setBounds(bX, btnStartY, bW, bH);
-    btnEndMainMenu.setBounds(bX, btnStartY + 56, bW, bH);
+    btnEndMainMenu.setBounds(bX, btnStartY + 68, bW, bH);
     btnEndReplay.draw();
     btnEndMainMenu.draw();
 
-    textSize(12);
-    fill(60);
+    textSize(15);
+    fill(90);
     textAlign(CENTER, BOTTOM);
-    text("[ESC] returns to Main Menu", width * 0.5f, height - 12);
+    text("[ESC] returns to Main Menu", width * 0.5f, height - 16);
 }
 
 void handleEndScreenClick() {
-    if (btnEndReplay.isOver())   startGame();
+    if (btnEndReplay.isOver())        startGame();
     else if (btnEndMainMenu.isOver()) goToMainMenu();
 }
