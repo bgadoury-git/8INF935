@@ -742,9 +742,7 @@ void computeFinalScore() {
         totalSpin += gamePeakOmega[i];
         totalTime += gameBodyTime[i];
     }
-    gameSpinScore  = totalSpin * 20.0f;
-    gameTimeScore  = totalTime * 50.0f;
-    gameFinalScore = gameSpinScore + gameTimeScore;
+    gameFinalScore = totalSpin * totalTime;
 }
 
 void setupGameCamera() {
@@ -1486,14 +1484,14 @@ void drawEndScreen() {
     textAlign(LEFT, CENTER);
     text("Total Time:", colX, summaryY);
     textAlign(RIGHT, CENTER);
-    text(nf(totalTime, 1, 2) + " s  (+" + int(gameTimeScore) + " pts)", colX + tableW, summaryY);
+    text(nf(totalTime, 1, 2) + " s ", colX + tableW, summaryY);
 
     textSize(18);
     fill(180, 255, 200);
     textAlign(LEFT, CENTER);
     text("Total Peak Spin:", colX, summaryY + 30);
     textAlign(RIGHT, CENTER);
-    text(nf(totalSpin, 1, 2) + " rad/s  (+" + int(gameSpinScore) + " pts)", colX + tableW, summaryY + 30);
+    text(nf(totalSpin, 1, 2) + " rad/s ", colX + tableW, summaryY + 30);
 
     // Total final score
     float scoreY = summaryY + 80;
